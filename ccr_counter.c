@@ -36,10 +36,20 @@ int ccr_ct_query(ccr_ct * cct, int * v){
 		fprintf(stderr,"Failed when locking mutex lock.\n");
 		return -1;
 	}
-	*v = ccr_ct;
+	*v = cct->ct;
 	if(pthread_mutex_unlock(&cct->lock) != 0){
 		fprintf(stderr,"Failed when unlocking mutex lock.\n");
 		return -1;
 	}
 }
+int ccr_ct_reset(ccr_ct * cct){
+	if(pthread_mutex_lock(&cct->lock) != 0){
+		fprintf(stderr,"Failed when locking mutex lock.\n");
+		return -1;
+	}
+	cct->ct = 0;
+	if(pthread_mutex_unlock(&cct->lock) != 0){
+		fprintf(stderr,"Failed when unlocking mutex lock.\n");
+		return -1;
+	}
 }

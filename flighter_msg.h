@@ -1,10 +1,13 @@
 // this header file describes all data structures that is needed in network messages
 #include <stdint.h>
+#include "ccr_counter.h"
+
 #ifndef _FLIGHTER_H
 #define _FLIGHTER_H
 // flight operation: sent by clients to this server
 // launch_weapon: 0 no 1 launch a missile 2 shoot a bullet 3 both
 typedef struct _flighter_op{
+	uint32_t tic;
 	// fu yang
 	int32_t pitch;
 	// fan gun
@@ -22,10 +25,13 @@ typedef struct _destroyed_flighter_ids{
 	uint32_t size;
 } destroyed_flighter_ids;
 
+// tic for syncronization both status
+
 // weapon status: sent by this server back to clients
 // weapon_id: distinct missisle id
 // weapon_type: 0 vanished 1 bullet 2 missile 
 typedef struct _weapon_status{
+	uint32_t tic;
 	uint32_t weapon_id;
 	uint32_t weapon_type;
 	int32_t x;
@@ -41,6 +47,7 @@ typedef struct _weapon_status{
 
 // flight status
 typedef struct _flighter_status{
+	uint32_t tic;
 	// position
 	uint32_t flighter_id;
 	uint32_t group_id;
@@ -60,6 +67,12 @@ typedef struct _flighter_status{
 	
 } flighter_status;
 
+// collection of flighter_op and flighter_status
+typedef struct _flighter_op_and_status{
+	flighter_op op;
+	flighter_status s;
+} flighter_op_and_status;
+
 // the overall status in a flighter match
 typedef struct _match_status{
 	flighter_status * flighters;
@@ -73,16 +86,23 @@ typedef struct _match_status{
 // grupd_id: n v n flight fight preparation
 // host and port need no explanation
 // sign 1: participant in fight  0: just a watcher
-// flight_id: negative if this client is just a watcher positive or 0 if this client is a participant and is opearting a flighter
+// flight_id: if sign 1 this is the id of this client's flight else if sign 0 this is meaningless
 // flighter_type: a number to indicate the specific information of a plane
 typedef struct _client_info{
 	uint32_t id;
 	uint32_t group_id;
+	uint32_t room_id;
 	char host[20];
 	char port[8];
 	uint32_t sign;
-	int32_t flighter_id;
+	uint32_t flighter_id;
 	uint32_t flighter_type;
+	// a pointer to this client's flight
+	flighter_op_and_status * fos;
+	// a pointer to this room's sync counter
+	ccr_ct * cct_sync_clients;
+	// a pointer to this room's clock
+	int * room_clock_p;
 } client_info;
 
 // single room information:

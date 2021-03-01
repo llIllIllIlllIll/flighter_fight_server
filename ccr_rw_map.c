@@ -11,7 +11,7 @@ int ccr_rw_map_init(ccr_rw_map * cmap){
 	}
 	return 0;
 }
-int ccr_rw_map_insert(ccr_rw_map * cmap,uint32_t k,uint32_t v){
+int ccr_rw_map_insert(ccr_rw_map * cmap,uint64_t k,uint64_t v){
 	int ret = pthread_rwlock_wrlock(&cmap->rwlock);
 	if(ret != 0){
 		fprintf(stderr,"Error when getting wrlock.\n");
@@ -47,7 +47,7 @@ int ccr_rw_map_insert(ccr_rw_map * cmap,uint32_t k,uint32_t v){
 		return 0;
 	}
 }
-int ccr_rw_map_query(ccr_rw_map * cmap,uint32_t k,uint32_t * v){
+int ccr_rw_map_query(ccr_rw_map * cmap,uint64_t k,uint64_t * v){
 	int ret = pthread_rwlock_rdlock(&cmap->rwlock);
 	if(ret != 0){
 		fprintf(stderr,"Error when getting rdlock.\n");

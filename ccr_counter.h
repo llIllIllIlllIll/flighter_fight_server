@@ -20,4 +20,6 @@ int ccr_ct_dec(ccr_ct * cct);
 // return 0 if success -1 
 // value of ct is stored in v
 int ccr_ct_query(ccr_ct * cct,int * v);
+// return 0 if success -1 otherwise
+int ccr_ct_reset(ccr_ct * cct);
 #endif
