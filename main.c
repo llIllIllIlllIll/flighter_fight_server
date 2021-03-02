@@ -38,9 +38,22 @@ void * client_thread(void * vargp){
 	flighter_op * f_o_pt;
 	uint32_t client_id;
 	uint64_t v;
-	ccr_ct * sync_clients_pt;
+	ccr_ct * cct_sync_clients_pt;
 	int client_clock;
 	int * room_clock_pt;
+	// for for loop only
+	int i;
+
+	// anything begin with net means this parameter is received from net
+	int32_t net_pitch_op;
+	int32_t net_roll_op;
+	int32_t net_dir_op;
+	int32_t net_acc_op;
+	uint32_t net_lw_op;
+	int32_t net_destroyed_flighter_n;
+	uint32_t net_destroyed_flighter_id;
+
+	char * buf_pt;
 
 	pthread_detach(pthread_self());
 	
@@ -59,13 +72,53 @@ void * client_thread(void * vargp){
 	// TODO: receive operation & send status later
 	f_s_pt = &(c_i_pt->fos->s);
 	f_o_pt = &(c_i_pt->fos->op);
-	sync_clients_pt = c_i_pt->cct_sync_clients;
+	cct_sync_clients_pt = c_i_pt->cct_sync_clients;
 	client_clock = 0;
 	room_clock_pt = c_i_pt->room_clock_p;
 
 	while(1){
 		if(client_clock == *room_clock_pt){
-		
+			if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
+				// operation
+				f_o_pt->tic = client_clock;
+				net_pitch_op = (int32_t)atoi(buf_pt);
+				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
+				net_roll_op = (int32_t)atoi(buf_pt);
+				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
+				net_dir_op = (int32_t)atoi(buf_pt);
+				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
+				net_acc_op = (int32_t)atoi(buf_pt);
+				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
+				net_lw_op = (uint32_t)atoi(buf_pt);
+				// detected destroyed flights
+				if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
+					buf_pt = buf;
+					net_destroyed_flighter_n = (int32_t)atoi(buf_pt);
+					for(i = 0; i < net_destroyed_flighter_n;i++){
+						buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
+						net_destroyed_flighter_id = (uint32_t)atoi(buf_pt);
+						// TODO: use this info : destroyed flighters
+					}
+				}
+				else{
+					//TODO: net problem
+				}
+			}
+			else{
+				//TODO: net problem
+			}
+			
+			// TODO: connect SIMULINK server to calculate status
+			// send status & op
+			
+			// OK: this client is ready
+			if(ccr_ct_inc(cct_sync_clients_pt) != 0){
+				//TODO: error
+			}
+			
+
+			// client_clock ready to go further
+			client_clock++;
 		}
 	}
 
