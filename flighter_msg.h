@@ -108,6 +108,8 @@ typedef struct _client_info{
 	// mutex & cond for its room
 	pthread_mutex_t * mut_room;
 	pthread_cond_t * cond_room;
+	// status of all flighters that should be sent back to each client
+	char * overall_status;
 } client_info;
 
 // single room information:

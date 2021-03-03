@@ -187,10 +187,10 @@ void * client_thread(void * vargp){
 			client_clock++;
 
 			// FIXME: use cond here
-			while(client_clock != *room_clock_pt){
-				
+			while(client_clock != *room_clock_pt){	
 			}
 			// TODO: send overall state of every flighter back to clients
+			rio_writen(connfd,c_i_pt->overall_status,strlen(c_i_pt->overall_status));
 		}
 	}
 
@@ -258,11 +258,16 @@ void * room_thread(void * vargp){
 	rio_t rio;
 	size_t n;
 	char buf[MAXLINE];
+	char temp_buf[MAXLINE];
 	char * buf_pt;
 	room_info r_i;
 	int i;
 	int room_clock;
+	flighter_status * f_s_pt;
+
 	ccr_ct cct_sync_clients;
+	// for query only
+	int k;
 	
 	// mutex and cond for this room
 	pthread_mutex_t mut_room;
@@ -336,6 +341,8 @@ void * room_thread(void * vargp){
 			
 				(*(r_i.clients+i)).mut_room = &mut_room;
 				(*(r_i.clients+i)).cond_room = &cond_room;
+				// overallstatus
+				(*(r_i.clients+i)).overall_status = NULL;
 			}
 			else{
 				//TODO: Network problem
@@ -348,9 +355,27 @@ void * room_thread(void * vargp){
 		// TODO: Network problem
 	}
 	// TODO: sync & calc & ... whatever needs be done by a room
-	// idea: use a ccr_rw_map to map client id to its current flighter_status and flighter_op
 	// 	 use a ccr_counter to let room_thread know when all client_thread s are ready
+	
+	while(1){
+		k = -1;
+		while(k != r_i.size){
+			ccr_ct_query(&cct_sync_clients,&k);
+		}
 
+		buf[0] = '\0';
+		for(i = 0; i < r_i.size; i++){
+			f_s_pt = &((*(r_i.clients+i)).fos->s);
+			sprintf(temp_buf,"%u %u %d %d %d %d %d %d %d %d %d %d %d %d\n",f_s_pt->flighter_id,f_s_pt->group_id,
+				f_s_pt->x,f_s_pt->y,f_s_pt->z,f_s_pt->u,f_s_pt->v,f_s_pt->w,f_s_pt->vx,f_s_pt->vy,f_s_pt->vz,
+				f_s_pt->vu,f_s_pt->vv,f_s_pt->vw);
+			strcat(buf,temp_buf);
+		}
+		for(i = 0; i < r_i.size; i++){
+			(r_i.clients+i)->overall_status = buf;
+		}
+		room_clock++;
+	}
 
 
 	if(ccr_ct_dec(&cct_rooms) != 0){
