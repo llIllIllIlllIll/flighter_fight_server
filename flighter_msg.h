@@ -1,6 +1,8 @@
 // this header file describes all data structures that is needed in network messages
 #include <stdint.h>
 #include "ccr_counter.h"
+#include <pthread.h>
+
 
 #ifndef _FLIGHTER_H
 #define _FLIGHTER_H
@@ -103,6 +105,9 @@ typedef struct _client_info{
 	ccr_ct * cct_sync_clients;
 	// a pointer to this room's clock
 	int * room_clock_p;
+	// mutex & cond for its room
+	pthread_mutex_t * mut_room;
+	pthread_cond_t * cond_room;
 } client_info;
 
 // single room information:
@@ -121,6 +126,9 @@ typedef struct _room_info{
 	uint32_t match_type;
 	client_info * clients;
 	uint32_t size;
+	// multi thread needed
+	pthread_mutex_t * mut;
+	pthread_cond_t * cond;
 } room_info;
 
 
