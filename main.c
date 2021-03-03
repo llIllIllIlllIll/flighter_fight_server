@@ -25,6 +25,54 @@ ccr_ct cct_clients;
 int max_rooms;
 int max_clients;
 
+// mutex & cond for connecting_s_server_thread
+pthread_mutex_t mut_s_server;
+pthread_cond_t cond_s_server;
+// 
+uint32_t ready_client_id;
+
+// simulink server host & port
+char * s_server_host = NULL;
+char * s_server_port = NULL;
+
+
+// TODO: how many this kind of threads should exist?
+void * connecting_s_server_thread(void * vargp){
+	rio_t rio;
+	char buf[MAXLINE];
+	uint64_t v;
+	client_info * ready_c_i_pt;
+	flighter_status * ready_f_s_pt;
+	flighter_op * ready_f_o_pt;
+
+	pthread_detach(pthread_self());
+	int client_fd;
+
+
+	client_fd = open_clientfd(s_server_host,s_server_port);
+	if(client_fd < 0){
+		fprintf(stderr,"ERROR: cannot connect to simulink server.\n");
+		pthread_exit(NULL);
+	}
+	rio_readinitb(&rio,client_fd);
+
+	while(1){
+		pthread_mutex_lock(&mut_s_server);
+		while(ready_client_id != 0){
+			pthread_cond_wait(&cond_s_server,&mut_s_server);
+		}
+		ccr_rw_map_query(&cmap_cid2cinfo,ready_client_id,&v);
+		ready_c_i_pt = (client_info *)v;
+		ready_f_s_pt = &(ready_c_i_pt->fos->s);
+		ready_f_o_pt = &(ready_c_i_pt->fos->op);
+
+		//TODO: according to ready_f_s_pt and ready_f_o_pt calculate a new status
+
+		pthread_mutex_unlock(&mut_s_server);
+	}
+}
+
+
 // client thread
 void * client_thread(void * vargp){
 	int connfd;
@@ -110,7 +158,12 @@ void * client_thread(void * vargp){
 			
 			// TODO: connect SIMULINK server to calculate status
 			// send status & op
-			
+			pthread_mutex_lock(&mut_s_server);
+			ready_client_id = c_i_pt->id;
+			pthread_cond_broadcast(&cond_s_server);
+			pthread_mutex_unlock(&mut_s_server);
+
+
 			// OK: this client is ready
 			if(ccr_ct_inc(cct_sync_clients_pt) != 0){
 				//TODO: error
@@ -297,6 +350,11 @@ int main(int argc,char * argv[]){
 	ccr_ct_init(&cct_rooms);
 	ccr_ct_init(&cct_clients);
 
+	// mutex & cond for s_server
+	pthread_mutex_init(&mut_s_server,NULL);
+	pthread_cond_init(&cond_s_server,NULL);
+	ready_client_id = 0;
+
 	// process msgs from room server
 	while(1){
 		clientlen = sizeof(struct sockaddr_storage);
@@ -315,6 +373,8 @@ int main(int argc,char * argv[]){
 			}
 		}
 	}
+
+	// TODO: pthread_join all threads
 	return 0;
 }
 
