@@ -36,6 +36,8 @@ uint32_t ready_client_id;
 char * s_server_host = NULL;
 char * s_server_port = NULL;
 
+// mutex protect STDOUT
+pthread_mutex_t mut_printf;
 
 // TODO: how many this kind of threads should exist?
 void * connecting_s_server_thread(void * vargp){
@@ -50,18 +52,24 @@ void * connecting_s_server_thread(void * vargp){
 	int client_fd;
 
 
-	client_fd = open_clientfd(s_server_host,s_server_port);
+	//TODO: below work
+	/*client_fd = open_clientfd(s_server_host,s_server_port);
 	if(client_fd < 0){
 		fprintf(stderr,"ERROR: cannot connect to simulink server.\n");
 		pthread_exit(NULL);
 	}
-	rio_readinitb(&rio,client_fd);
+	rio_readinitb(&rio,client_fd);*/
 
 	while(1){
 		pthread_mutex_lock(&mut_s_server);
-		while(ready_client_id != 0){
+		while(ready_client_id == 0){
 			pthread_cond_wait(&cond_s_server,&mut_s_server);
 		}
+		
+		pthread_mutex_lock(&mut_printf);
+		printf("[CONNECTING_S_SERVER_THREAD] start working for client %d\n",ready_client_id);
+		pthread_mutex_unlock(&mut_printf);
+
 		ccr_rw_map_query(&cmap_cid2cinfo,ready_client_id,&v);
 		ready_c_i_pt = (client_info *)v;
 		ready_f_s_pt = &(ready_c_i_pt->fos->s);
@@ -69,7 +77,9 @@ void * connecting_s_server_thread(void * vargp){
 
 		//TODO: according to ready_f_s_pt and ready_f_o_pt calculate a new status
 		//TODO: remember to add 1 in the tic of new status
+		ready_f_s_pt->tic++;
 
+		ready_client_id = 0;
 		pthread_mutex_unlock(&mut_s_server);
 	}
 }
@@ -124,8 +134,12 @@ void * client_thread(void * vargp){
 
 	// not 0 means room_thread is not ready yet
 	while(ccr_rw_map_query(&cmap_cid2cinfo,client_id,&v) != 0);
-	
+
 	c_i_pt = (client_info *)v;
+
+	pthread_mutex_lock(&mut_printf);
+	printf("[CLIENT_THREAD id %d]client successfully connected\n",c_i_pt->id);
+	pthread_mutex_unlock(&mut_printf);
 
 	// get some info from c_i_pt into local variables
 	f_s_pt = &(c_i_pt->fos->s);
@@ -138,10 +152,20 @@ void * client_thread(void * vargp){
 	mut_clients_pt = c_i_pt->mut_clients_pt;
 	cond_clients_pt = c_i_pt->cond_clients_pt;
 
+	pthread_mutex_lock(&mut_printf);
+	printf("[CLIENT_THREAD id %d]local variables initialized successfully\n",c_i_pt->id);
+	pthread_mutex_unlock(&mut_printf);
+
 	while(1){
 		if(client_clock == *room_clock_pt){
 			if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
 				// operation
+				pthread_mutex_lock(&mut_printf);
+				printf("[CLIENT_THREAD id %d]content read in op of clock %d:%s\n",c_i_pt->id,client_clock,buf);
+				pthread_mutex_unlock(&mut_printf);
+
+				buf_pt = buf;
+
 				f_o_pt->tic = client_clock;
 				net_pitch_op = (int32_t)atoi(buf_pt);
 				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
@@ -152,6 +176,12 @@ void * client_thread(void * vargp){
 				net_acc_op = (int32_t)atoi(buf_pt);
 				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 				net_lw_op = (uint32_t)atoi(buf_pt);
+
+				pthread_mutex_lock(&mut_printf);
+				printf("[CLIENT_THREAD id %d]client thread has processed op\n",c_i_pt->id);
+				pthread_mutex_unlock(&mut_printf);
+
+
 				// detected destroyed flights
 				if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
 					buf_pt = buf;
@@ -168,8 +198,13 @@ void * client_thread(void * vargp){
 			}
 			else{
 				//TODO: net problem
+				continue;
 			}
 			
+			pthread_mutex_lock(&mut_printf);
+			printf("[CLIENT_THREAD id %d] has sent opeartion for clock %d\n",c_i_pt->id,client_clock);
+			pthread_mutex_unlock(&mut_printf);
+
 			// send status & op & notify simulink_server_thread that one of the clients has sent a
 			// fos to it
 			pthread_mutex_lock(&mut_s_server);
@@ -183,8 +218,12 @@ void * client_thread(void * vargp){
 			while(f_s_pt->tic != client_clock+1){
 				continue;
 			}
-			
 
+			pthread_mutex_lock(&mut_printf);
+			printf("[CLIENT_THREAD id %d] client has finished status calculation for clock %d, ready to sync\n",c_i_pt->id,client_clock);
+			pthread_mutex_unlock(&mut_printf);
+			
+			
 			// OK: this client is ready
 			pthread_mutex_lock(mut_room_pt);
 			if(ccr_ct_inc(cct_sync_clients_pt) != 0){
@@ -203,6 +242,10 @@ void * client_thread(void * vargp){
 				pthread_cond_wait(cond_clients_pt,mut_clients_pt);	
 			}
 			pthread_mutex_unlock(mut_clients_pt);
+
+			pthread_mutex_lock(&mut_printf);
+			printf("[CLIENT_THREAD id %d] sync has been accomplished; write back to client and move on\n",c_i_pt->id);
+			pthread_mutex_unlock(&mut_printf);
 
 			// TODO: send overall state of every flighter back to clients
 			rio_writen(connfd,c_i_pt->overall_status,strlen(c_i_pt->overall_status));
@@ -307,6 +350,10 @@ void * room_thread(void * vargp){
 	connfd = sbuf_remove(&sbuf_for_room_server);
 	rio_readinitb(&rio,connfd);
 	
+	pthread_mutex_lock(&mut_printf);
+	printf("[ROOM_THREAAD] room connected\n");
+	pthread_mutex_unlock(&mut_printf);
+
 	// init room_clock
 	room_clock = 0;
 	// read room info from room server
@@ -378,6 +425,10 @@ void * room_thread(void * vargp){
 	else{
 		// TODO: Network problem
 	}
+
+	pthread_mutex_lock(&mut_printf);
+	printf("[ROOM_THREAAD id %d] room configuration completed, begin real work\n",r_i.room_id);
+	pthread_mutex_unlock(&mut_printf);
 	// TODO: sync & calc & ... whatever needs be done by a room
 	// 	 use a ccr_counter to let room_thread know when all client_thread s are ready
 	
@@ -389,6 +440,10 @@ void * room_thread(void * vargp){
 			ccr_ct_query(&cct_sync_clients,&k);
 		}
 		pthread_mutex_unlock(&mut_room);
+		
+		pthread_mutex_lock(&mut_printf);
+		printf("[ROOM_THREAAD id %d] room sync accomplished clock %d\n",r_i.room_id,room_clock);
+		pthread_mutex_unlock(&mut_printf);
 
 		buf[0] = '\0';
 		for(i = 0; i < r_i.size; i++){
@@ -408,6 +463,7 @@ void * room_thread(void * vargp){
 		pthread_mutex_unlock(&mut_clients);
 	
 		ccr_ct_reset(&cct_sync_clients);
+	
 	}
 
 
@@ -425,15 +481,12 @@ int main(int argc,char * argv[]){
 	socklen_t clientlen;
 	struct sockaddr_storage clientaddr;
 	pthread_t tid;
-	if(argc != 4){
+	if(argc != 5){
 		fprintf(stderr,"usage: %s <port_for_roomserver> <port_for_clients> <max_rooms> <max_clients>\n",argv[0]);
 		exit(1);
 	}
 	roomserver_listenfd = open_listenfd(argv[1]);
 	clients_listenfd = open_listenfd(argv[2]);
-	// the thread that waits for incoming clients
-	// this thread is responsible of assigning a client to its specific room
-	pthread_create(&tid,NULL,waiting_for_clients_thread,NULL);
 
 	max_rooms = atoi(argv[3]);
 	max_clients = atoi(argv[4]);
@@ -449,6 +502,16 @@ int main(int argc,char * argv[]){
 	pthread_cond_init(&cond_s_server,NULL);
 	ready_client_id = 0;
 
+	// stdout
+	pthread_mutex_init(&mut_printf,NULL);
+
+
+	// the thread that waits for incoming clients
+	// this thread is responsible of assigning a client to its specific room
+	pthread_create(&tid,NULL,waiting_for_clients_thread,NULL);
+
+	// the thread connects s_server
+	pthread_create(&tid,NULL,connecting_s_server_thread,NULL);
 
 
 	// process msgs from room server
