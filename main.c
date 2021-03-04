@@ -36,10 +36,6 @@ uint32_t ready_client_id;
 char * s_server_host = NULL;
 char * s_server_port = NULL;
 
-// mutex & cond for clients
-pthread_mutex_t mut_clients;
-pthread_cond_t cond_clients;
-
 
 // TODO: how many this kind of threads should exist?
 void * connecting_s_server_thread(void * vargp){
@@ -107,6 +103,12 @@ void * client_thread(void * vargp){
 	int32_t net_destroyed_flighter_n;
 	uint32_t net_destroyed_flighter_id;
 
+	//
+	pthread_mutex_t * mut_room_pt;
+	pthread_cond_t * cond_room_pt;
+	pthread_mutex_t * mut_clients_pt;
+	pthread_cond_t * cond_clients_pt;
+
 	char * buf_pt;
 
 	pthread_detach(pthread_self());
@@ -125,12 +127,16 @@ void * client_thread(void * vargp){
 	
 	c_i_pt = (client_info *)v;
 
-	// TODO: receive operation & send status later
+	// get some info from c_i_pt into local variables
 	f_s_pt = &(c_i_pt->fos->s);
 	f_o_pt = &(c_i_pt->fos->op);
 	cct_sync_clients_pt = c_i_pt->cct_sync_clients;
 	client_clock = 0;
 	room_clock_pt = c_i_pt->room_clock_p;
+	mut_room_pt = c_i_pt->mut_room_pt;
+	cond_room_pt = c_i_pt->cond_room_pt;
+	mut_clients_pt = c_i_pt->mut_clients_pt;
+	cond_clients_pt = c_i_pt->cond_clients_pt;
 
 	while(1){
 		if(client_clock == *room_clock_pt){
@@ -164,8 +170,8 @@ void * client_thread(void * vargp){
 				//TODO: net problem
 			}
 			
-			// TODO: connect SIMULINK server to calculate status
-			// send status & op
+			// send status & op & notify simulink_server_thread that one of the clients has sent a
+			// fos to it
 			pthread_mutex_lock(&mut_s_server);
 			ready_client_id = c_i_pt->id;
 			pthread_cond_broadcast(&cond_s_server);
@@ -173,22 +179,31 @@ void * client_thread(void * vargp){
 
 			// FIXME: this is temporarily a forever loop waits for s_server to do its job
 			// use cond later
+			// maybe not? just spin is fine?
 			while(f_s_pt->tic != client_clock+1){
 				continue;
 			}
 			
 
 			// OK: this client is ready
+			pthread_mutex_lock(mut_room_pt);
 			if(ccr_ct_inc(cct_sync_clients_pt) != 0){
-				//TODO: error
+				//TODO:error	
 			}
+			// notify the sleeping room_thread: one of the clients is ready
+			pthread_cond_broadcast(cond_room_pt);
+			pthread_mutex_unlock(mut_room_pt);
 			
 			// client_clock ready to go further
 			client_clock++;
 
-			// FIXME: use cond here
-			while(client_clock != *room_clock_pt){	
+			pthread_mutex_lock(mut_clients_pt);
+			while(client_clock != *room_clock_pt){
+				// wait for room_thread's clock to go on
+				pthread_cond_wait(cond_clients_pt,mut_clients_pt);	
 			}
+			pthread_mutex_unlock(mut_clients_pt);
+
 			// TODO: send overall state of every flighter back to clients
 			rio_writen(connfd,c_i_pt->overall_status,strlen(c_i_pt->overall_status));
 		}
@@ -222,10 +237,7 @@ void * waiting_for_clients_thread(void * vargp){
 		clientlen = sizeof(struct sockaddr_storage);
 		connfd = accept(clients_listenfd,(SA*)&clientaddr,&clientlen);
 		
-		pthread_mutex_lock(&mut_clients);
 		sbuf_insert(&sbuf_for_clients,connfd);
-		pthread_cond_broadcast(&cond_clients);
-		pthread_mutex_unlock(&mut_clients);
 
 		if(ccr_ct_query(&cct_clients,&v) != 0){
 			exit(-1);
@@ -269,15 +281,23 @@ void * room_thread(void * vargp){
 	// for query only
 	int k;
 	
-	// mutex and cond for this room
+	// mutex and cond for clients to wake up this room:
+	// i.e. to info this room that one of the clients has been ready
 	pthread_mutex_t mut_room;
 	pthread_cond_t cond_room;
+	// ~              for this room to wake up its clients:
+	// i.e. to info all clients that synchrnization has been accomplished
+	pthread_mutex_t mut_clients;
+	pthread_cond_t cond_clients;
 
 	pthread_mutex_init(&mut_room,NULL);
 	pthread_cond_init(&cond_room,NULL);
 	r_i.mut = &mut_room;
 	r_i.cond = &cond_room;
 
+	pthread_mutex_init(&mut_clients,NULL);
+	pthread_cond_init(&cond_clients,NULL);
+	
 	pthread_detach(pthread_self());
 	
 	// TODO:fault check
@@ -339,8 +359,12 @@ void * room_thread(void * vargp){
 				// clock
 				(*(r_i.clients+i)).room_clock_p = &room_clock;
 			
-				(*(r_i.clients+i)).mut_room = &mut_room;
-				(*(r_i.clients+i)).cond_room = &cond_room;
+				(*(r_i.clients+i)).mut_room_pt = &mut_room;
+				(*(r_i.clients+i)).cond_room_pt = &cond_room;
+				//
+				(*(r_i.clients+i)).mut_clients_pt = &mut_clients;
+				(*(r_i.clients+i)).cond_clients_pt = &cond_clients;
+				
 				// overallstatus
 				(*(r_i.clients+i)).overall_status = NULL;
 			}
@@ -359,9 +383,12 @@ void * room_thread(void * vargp){
 	
 	while(1){
 		k = -1;
+		pthread_mutex_lock(&mut_room);
 		while(k != r_i.size){
+			pthread_cond_wait(&cond_room,&mut_room);
 			ccr_ct_query(&cct_sync_clients,&k);
 		}
+		pthread_mutex_unlock(&mut_room);
 
 		buf[0] = '\0';
 		for(i = 0; i < r_i.size; i++){
@@ -374,7 +401,13 @@ void * room_thread(void * vargp){
 		for(i = 0; i < r_i.size; i++){
 			(r_i.clients+i)->overall_status = buf;
 		}
+		// when room_clock moves on notify all clients to move on
+		pthread_mutex_lock(&mut_clients);
 		room_clock++;
+		pthread_cond_broadcast(&cond_clients);
+		pthread_mutex_unlock(&mut_clients);
+	
+		ccr_ct_reset(&cct_sync_clients);
 	}
 
 
@@ -416,9 +449,6 @@ int main(int argc,char * argv[]){
 	pthread_cond_init(&cond_s_server,NULL);
 	ready_client_id = 0;
 
-	// mutex & cond for clients
-	pthread_mutex_init(&mut_clients,NULL);
-	pthread_cond_init(&cond_clients,NULL);
 
 
 	// process msgs from room server

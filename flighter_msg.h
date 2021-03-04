@@ -105,9 +105,13 @@ typedef struct _client_info{
 	ccr_ct * cct_sync_clients;
 	// a pointer to this room's clock
 	int * room_clock_p;
-	// mutex & cond for its room
-	pthread_mutex_t * mut_room;
-	pthread_cond_t * cond_room;
+	// mutex & cond for client_thread to wake up its room_thread
+	pthread_mutex_t * mut_room_pt;
+	pthread_cond_t * cond_room_pt;
+	// mutex & cond for room_thread to wake up its client_thread s
+	pthread_mutex_t * mut_clients_pt;
+	pthread_cond_t * cond_clients_pt;
+	
 	// status of all flighters that should be sent back to each client
 	char * overall_status;
 } client_info;
