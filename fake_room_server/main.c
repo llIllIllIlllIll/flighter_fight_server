@@ -1,28 +1,46 @@
 #include "net.h"
 #include <stdio.h>
+#include <stdlib.h>
+// this is a test program aiming to simulate room_server's function
 int main(int argc, char * argv []){
 	int clientfd;
 	char buf[MAXLINE];
+	char temp_buf[MAXLINE];
 	rio_t rio;
+	int rooms;
+	int clients_per_room;
+	int clientid;
+	int i,j;
+	int roomid;
 
-
-	if(argc != 3){
-		fprintf(stderr,"usage: %s <host> <port>\n",argv[0]);
+	if(argc != 5){
+		fprintf(stderr,"usage: %s <host> <port> <room_number> <clients_per_room>\n",argv[0]);
 		return -1;
 	}
 	char * host = argv[1];
 	char * port = argv[2];
+	rooms = atoi(argv[3]);
+	clients_per_room = atoi(argv[4]);
+	
+	clientid = 1;
+	roomid = 1;
 
-	clientfd = open_clientfd(host,port);
-	if(clientfd<0){
-		fprintf(stderr,"net error\n");
+	for(i = 0; i < rooms; i++){
+		clientfd = open_clientfd(host,port);
+		if(clientfd<0){
+			fprintf(stderr,"net error\n");
+		}
+		rio_readinitb(&rio,clientfd);
+		buf[0] = '\0';
+		sprintf(buf,"%d %d 1 1 1 %d\n",roomid,clients_per_room,clients_per_room);
+		for(j = 0; j < clients_per_room; j++){
+			sprintf(temp_buf,"%d 1 localhost 1234 1 1 1\n",clientid++);
+			strcat(buf,temp_buf);
+		}
+		rio_writen(clientfd,buf,strlen(buf));
+		roomid++;
 	}
 
-
-	rio_readinitb(&rio,clientfd);
-
-	char * content = "1 1 1 1 1 1\n1 1 0.0.0.0 1234 1 1 1\n";
-	rio_writen(clientfd,content,strlen(content));
 	return 0;
 
 }

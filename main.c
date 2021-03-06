@@ -77,6 +77,9 @@ void * connecting_s_server_thread(void * vargp){
 
 		//TODO: according to ready_f_s_pt and ready_f_o_pt calculate a new status
 		//TODO: remember to add 1 in the tic of new status
+		ready_f_s_pt->x++;
+		ready_f_s_pt->y++;
+		ready_f_s_pt->z++;
 		ready_f_s_pt->tic++;
 
 		ready_client_id = 0;
@@ -161,7 +164,7 @@ void * client_thread(void * vargp){
 			if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
 				// operation
 				pthread_mutex_lock(&mut_printf);
-				printf("[CLIENT_THREAD id %d]content read in op of clock %d:%s\n",c_i_pt->id,client_clock,buf);
+				// printf("[CLIENT_THREAD id %d]content read in op of clock %d:%s\n",c_i_pt->id,client_clock,buf);
 				pthread_mutex_unlock(&mut_printf);
 
 				buf_pt = buf;
@@ -446,9 +449,10 @@ void * room_thread(void * vargp){
 		pthread_mutex_unlock(&mut_printf);
 
 		buf[0] = '\0';
+		sprintf(buf,"%d\n",r_i.size);
 		for(i = 0; i < r_i.size; i++){
 			f_s_pt = &((*(r_i.clients+i)).fos->s);
-			sprintf(temp_buf,"%u %u %d %d %d %d %d %d %d %d %d %d %d %d\n",f_s_pt->flighter_id,f_s_pt->group_id,
+			sprintf(temp_buf,"flighter%u of group%u: %d %d %d %d %d %d %d %d %d %d %d %d\n",f_s_pt->flighter_id,f_s_pt->group_id,
 				f_s_pt->x,f_s_pt->y,f_s_pt->z,f_s_pt->u,f_s_pt->v,f_s_pt->w,f_s_pt->vx,f_s_pt->vy,f_s_pt->vz,
 				f_s_pt->vu,f_s_pt->vv,f_s_pt->vw);
 			strcat(buf,temp_buf);
@@ -456,6 +460,11 @@ void * room_thread(void * vargp){
 		for(i = 0; i < r_i.size; i++){
 			(r_i.clients+i)->overall_status = buf;
 		}
+
+		pthread_mutex_lock(&mut_printf);
+		printf("[ROOM_THREAAD id %d] room status of clock %d:\n%s\n",r_i.room_id,room_clock,buf);
+		pthread_mutex_unlock(&mut_printf);
+
 		// when room_clock moves on notify all clients to move on
 		pthread_mutex_lock(&mut_clients);
 		room_clock++;
