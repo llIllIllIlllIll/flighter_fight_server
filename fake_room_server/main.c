@@ -34,7 +34,8 @@ int main(int argc, char * argv []){
 		buf[0] = '\0';
 		sprintf(buf,"%d %d 1 1 1 %d\n",roomid,clients_per_room,clients_per_room);
 		for(j = 0; j < clients_per_room; j++){
-			sprintf(temp_buf,"%d 1 localhost 1234 1 1 1\n",clientid++);
+			sprintf(temp_buf,"%d 1 localhost 1234 1 %d 1\n",clientid,clientid);
+			clientid++;
 			strcat(buf,temp_buf);
 		}
 		rio_writen(clientfd,buf,strlen(buf));

@@ -46,11 +46,26 @@ void * fake_client_thread(void * vargs){
 			n = 0;
 			buf[0] = '\0';
 			while(n == 0){
-				if((n = rio_read(&rio,buf,MAXLINE)) != 0){
-					printf("[CLIENT ID %d CLOCK %d]res:\n%s",local_clientid,i/2,buf);
+				if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
+					clients = atoi(buf);
+					pthread_mutex_lock(&mut_printf);
+					printf("[CLIENT %d] received: %d\n",local_clientid,clients);
+					pthread_mutex_unlock(&mut_printf);
 					break;
 				}
 			}
+			for(j = 0; j < clients; j++){
+				n = 0;
+				while(n == 0){
+					if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
+						pthread_mutex_lock(&mut_printf);
+						printf("[CLIENT %d] received: %s",local_clientid,buf);
+						pthread_mutex_unlock(&mut_printf);
+						break;
+					}
+				}
+			}
+			//pthread_mutex_unlock(&mut_printf);
 		}
 	}
 	pthread_exit(NULL);
