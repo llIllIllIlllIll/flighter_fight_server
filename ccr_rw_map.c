@@ -1,12 +1,13 @@
 #include "ccr_rw_map.h"
 int ccr_rw_map_init(ccr_rw_map * cmap){
+	int i;
 	int ret = pthread_rwlock_init(&cmap->rwlock,NULL);
 	if(ret != 0){
 		fprintf(stderr,"Error when initializing rwlock.\n");
 		return -1;
 	}
 	//cmap->rwlock = PTHREAD_RWLOCK_INITIALIZER;
-	for(int i = 0; i < 100; i++){
+	for(i = 0; i < 100; i++){
 		cmap->slots[i] = NULL;
 	}
 	return 0;
