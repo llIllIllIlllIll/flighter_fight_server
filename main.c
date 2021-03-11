@@ -357,11 +357,30 @@ void * room_thread(void * vargp){
 	printf("[ROOM_THREAAD] room connected\n");
 	pthread_mutex_unlock(&mut_printf);
 
+	// POST url .. etc
+	rio_readlineb(&rio,buf,MAXLINE);
+	printf("%s",buf);
+	// headers
+	read_requesthdrs(&rio);
+	//
+	printf("[ROOM_THREAD]parsed all headers\n"); 
+	char * res_content = "HTTP/1.0 200 OK\r\nServer: Flighter Fight Server\r\nContent-length: 2\r\nContent-type: html/text\r\n\r\nOK";
+	/*if((n = rio_readlineb(&rio,buf,MAXLINE)) > 0){
+		pthread_mutex_lock(&mut_printf);
+		printf("%s\n",buf);
+		pthread_mutex_unlock(&mut_printf);
+
+	}*/
+	
+
 	// init room_clock
 	room_clock = 0;
 	// read room info from room server
 	// just basic configurations
 	if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
+		// TODO: delete output
+		printf("%s",buf);
+
 		buf_pt = buf;
 		// TODO: check if at any time atoi returns 0
 		// TODO: check if at any time strchr returns NULL
@@ -373,12 +392,16 @@ void * room_thread(void * vargp){
 		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 		r_i.env_id = (uint32_t)atoi(buf_pt);
 		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
-		r_i.match_type = (uint32_t)atoi(buf_pt);
+		//TODO: match type
+		//r_i.match_type = (uint32_t)atoi(buf_pt);
+		r_i.match_type = 1;
 		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 		r_i.size = (uint32_t)atoi(buf_pt);
 		r_i.clients = (client_info *)malloc(r_i.size*sizeof(client_info));
 		for(i = 0; i < r_i.size; i++){
 			if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
+				// TODO: delete output
+				printf("%s",buf);
 				buf_pt = buf;
 				
 				(*(r_i.clients+i)).room_id = r_i.room_id;
@@ -395,8 +418,11 @@ void * room_thread(void * vargp){
 				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 				(*(r_i.clients+i)).flighter_id = (uint32_t)atoi(buf_pt);
 				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
-				(*(r_i.clients+i)).flighter_type = (uint32_t)atoi(buf_pt);
-			
+				
+				// TODO: delete this
+				//(*(r_i.clients+i)).flighter_type = (uint32_t)atoi(buf_pt);
+				(*(r_i.clients+i)).flighter_type = 1;			
+
 				(*(r_i.clients+i)).fos = (flighter_op_and_status *)malloc(sizeof(flighter_op_and_status));
 				// XXX:rules: only when all clients' op tic is x
 				// can status move to x (x - 1 before)
@@ -428,6 +454,9 @@ void * room_thread(void * vargp){
 	else{
 		// TODO: Network problem
 	}
+
+	rio_writen(connfd,res_content,strlen(res_content));
+	close(connfd);
 
 	pthread_mutex_lock(&mut_printf);
 	printf("[ROOM_THREAAD id %d] room configuration completed, begin real work\n",r_i.room_id);
@@ -496,6 +525,11 @@ int main(int argc,char * argv[]){
 	}
 	roomserver_listenfd = open_listenfd(argv[1]);
 	clients_listenfd = open_listenfd(argv[2]);
+	
+	if(roomserver_listenfd < 0 || clients_listenfd < 0){
+		fprintf(stderr,"net error\n");
+		return -1;
+	}
 
 	max_rooms = atoi(argv[3]);
 	max_clients = atoi(argv[4]);
