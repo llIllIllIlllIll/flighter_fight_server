@@ -9,6 +9,7 @@ pthread_mutex_t mut_clientid;
 char * host, * port;
 pthread_mutex_t mut_printf;
 int clocks;
+pthread_mutex_t mut_net;
 
 
 void * fake_client_thread(void * vargs){
@@ -39,8 +40,11 @@ void * fake_client_thread(void * vargs){
 	
 	for(i = 1; i <= clocks*2; i++){
 		if(i%2){
+			sleep(3);
 			char * content = "1 1 1 1 1\n0\n";
+			pthread_mutex_lock(&mut_net);	
 			rio_writen(clientfd,content,strlen(content));
+			pthread_mutex_unlock(&mut_net);
 		}
 		else{
 			n = 0;
@@ -96,6 +100,8 @@ int main(int argc, char * argv []){
 	glo_clientid = 1;
 
 	pthread_mutex_init(&mut_printf,NULL);
+	
+	pthread_mutex_init(&mut_net,NULL);
 
 	for(i = 0; i < clients;i++){
 		pthread_create(tids+i,NULL,fake_client_thread,NULL);

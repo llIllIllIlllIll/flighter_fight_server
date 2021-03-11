@@ -58,7 +58,9 @@ void * connecting_s_server_thread(void * vargp){
 		fprintf(stderr,"ERROR: cannot connect to simulink server.\n");
 		pthread_exit(NULL);
 	}
+	
 	rio_readinitb(&rio,client_fd);*/
+	
 
 	while(1){
 		pthread_mutex_lock(&mut_s_server);
@@ -83,6 +85,8 @@ void * connecting_s_server_thread(void * vargp){
 		ready_f_s_pt->tic++;
 
 		ready_client_id = 0;
+		pthread_cond_broadcast(&cond_s_server);
+
 		pthread_mutex_unlock(&mut_s_server);
 	}
 }
@@ -211,9 +215,16 @@ void * client_thread(void * vargp){
 			// send status & op & notify simulink_server_thread that one of the clients has sent a
 			// fos to it
 			pthread_mutex_lock(&mut_s_server);
+			while(ready_client_id != 0){
+				pthread_cond_wait(&cond_s_server,&mut_s_server);
+			}
 			ready_client_id = c_i_pt->id;
 			pthread_cond_broadcast(&cond_s_server);
 			pthread_mutex_unlock(&mut_s_server);
+
+			pthread_mutex_lock(&mut_printf);
+			printf("[CLIENT_THREAD id %d] has asked s_server to work\n",c_i_pt->id);
+			pthread_mutex_unlock(&mut_printf);
 
 			// FIXME: this is temporarily a forever loop waits for s_server to do its job
 			// use cond later
