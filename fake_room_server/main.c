@@ -32,13 +32,16 @@ int main(int argc, char * argv []){
 		}
 		rio_readinitb(&rio,clientfd);
 		buf[0] = '\0';
-		sprintf(buf,"%d %d 1 1 1 %d\n",roomid,clients_per_room,clients_per_room);
+		sprintf(buf,"firstline\nabc\r\n\r\n%d %d 1 1 1 %d\n",roomid,clients_per_room,clients_per_room);
 		for(j = 0; j < clients_per_room; j++){
 			sprintf(temp_buf,"%d 1 localhost 1234 1 %d 1\n",clientid,clientid);
 			clientid++;
 			strcat(buf,temp_buf);
 		}
+		printf("room %d ready to write... content:\n%s\n",i,buf);
 		rio_writen(clientfd,buf,strlen(buf));
+		close(clientfd);
+		sleep(1);
 		roomid++;
 	}
 

@@ -132,6 +132,7 @@ typedef struct _room_info{
 	uint32_t match_type;
 	client_info * clients;
 	uint32_t size;
+	uint32_t status;
 	// multi thread needed
 	pthread_mutex_t * mut;
 	pthread_cond_t * cond;
