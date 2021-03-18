@@ -41,7 +41,7 @@ void * fake_client_thread(void * vargs){
 	rio_readlineb(&rio,buf,MAXLINE);
 	for(i = 1; i <= clocks*2; i++){
 		if(i%2){
-			sleep(3);
+			sleep(1);
 			char * content = "1 1 1 1 1 1 1\n0\n";
 			pthread_mutex_lock(&mut_net);	
 			rio_writen(clientfd,content,strlen(content));

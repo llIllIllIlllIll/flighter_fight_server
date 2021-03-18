@@ -353,6 +353,10 @@ void * client_thread(void * vargp){
 
 			// TODO: send overall state of every flighter back to clients
 			rio_writen(connfd,c_i_pt->overall_status,strlen(c_i_pt->overall_status));
+			// TODO: end of game
+			if(c_i_pt->overall_status[0] == 'E'){
+				pthread_exit(NULL);
+			}
 		}
 	}
 
@@ -583,7 +587,30 @@ void * room_thread(void * vargp){
 		printf("[ROOM_THREAAD id %d] room sync accomplished clock %d\n",r_i_pt->room_id,room_clock);
 		pthread_mutex_unlock(&mut_printf);
 
+	
+		// TODO: remove this and do a real closure
 		buf[0] = '\0';
+		if(room_clock == 20){
+			sprintf(buf,"END\n1\n");
+			for(i = 0; i < r_i_pt->size; i++){
+				(r_i_pt->clients+i)->overall_status = buf;
+			}
+					
+			pthread_mutex_lock(&mut_printf);
+			printf("[ROOM_THREAAD id %d] room status of clock %d:\n%s\n",r_i_pt->room_id,room_clock,buf);
+			pthread_mutex_unlock(&mut_printf);
+
+
+			// when room_clock moves on notify all clients to move on
+			pthread_mutex_lock(&mut_clients);
+			room_clock++;
+			pthread_cond_broadcast(&cond_clients);
+			pthread_mutex_unlock(&mut_clients);
+	
+			ccr_ct_reset(&cct_sync_clients);
+			pthread_exit(NULL);
+		}
+
 		sprintf(buf,"%d\n",r_i_pt->size);
 		for(i = 0; i < r_i_pt->size; i++){
 			f_s_pt = &((*(r_i_pt->clients+i)).fos->s);
