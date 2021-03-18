@@ -37,11 +37,12 @@ void * fake_client_thread(void * vargs){
 	
 	sprintf(buf,"%d\n",local_clientid);
 	rio_writen(clientfd,buf,strlen(buf));
-	
+	rio_readlineb(&rio,buf,MAXLINE);
+	rio_readlineb(&rio,buf,MAXLINE);
 	for(i = 1; i <= clocks*2; i++){
 		if(i%2){
 			sleep(3);
-			char * content = "1 1 1 1 1\n0\n";
+			char * content = "1 1 1 1 1 1 1\n0\n";
 			pthread_mutex_lock(&mut_net);	
 			rio_writen(clientfd,content,strlen(content));
 			pthread_mutex_unlock(&mut_net);

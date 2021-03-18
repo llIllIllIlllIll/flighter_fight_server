@@ -198,7 +198,9 @@ void * client_thread(void * vargp){
 	uint32_t net_lw_op;
 	int32_t net_destroyed_flighter_n;
 	uint32_t net_destroyed_flighter_id;
-
+	uint32_t timestamp;
+	
+	char * init_status = "1\n1 1 1 1 1 1 1 1 1 1 1 1 1 1 1\n";
 	//
 	pthread_mutex_t * mut_room_pt;
 	pthread_cond_t * cond_room_pt;
@@ -217,6 +219,9 @@ void * client_thread(void * vargp){
 	if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
 		client_id = (uint32_t)atoi(buf);
 	}
+	buf[MAXLINE-1] = 0;
+	//printf("[CLIENT_THREAD id %d] first time message: %s[END]\n",c_i_pt->id,buf);
+	rio_writen(connfd,init_status,strlen(init_status));
 
 	// not 0 means room_thread is not ready yet
 	while(ccr_rw_map_query(&cmap_cid2cinfo,client_id,&v) != 0);
@@ -244,15 +249,20 @@ void * client_thread(void * vargp){
 
 	while(1){
 		if(client_clock == *room_clock_pt){
+			printf("[CLIENT_THREAD id %d] ready to read from client\n",c_i_pt->id);
 			if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
 				// operation
 				pthread_mutex_lock(&mut_printf);
-				// printf("[CLIENT_THREAD id %d]content read in op of clock %d:%s\n",c_i_pt->id,client_clock,buf);
+				printf("[CLIENT_THREAD id %d]content read in op of clock %d:%s[END]\n",c_i_pt->id,client_clock,buf);
 				pthread_mutex_unlock(&mut_printf);
 
 				buf_pt = buf;
 
 				f_o_pt->tic = client_clock;
+				client_id = (uint32_t)atoi(buf_pt);
+				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
+				timestamp = (uint32_t)atoi(buf_pt);
+				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 				net_pitch_op = (int32_t)atoi(buf_pt);
 				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 				net_roll_op = (int32_t)atoi(buf_pt);
@@ -264,7 +274,7 @@ void * client_thread(void * vargp){
 				net_lw_op = (uint32_t)atoi(buf_pt);
 
 				pthread_mutex_lock(&mut_printf);
-				printf("[CLIENT_THREAD id %d]client thread has processed op\n",c_i_pt->id);
+				printf("[CLIENT_THREAD id %d]client thread has processed op %d %d %d %d %d\n",c_i_pt->id,net_pitch_op,net_roll_op,net_dir_op,net_acc_op,net_lw_op);
 				pthread_mutex_unlock(&mut_printf);
 
 
