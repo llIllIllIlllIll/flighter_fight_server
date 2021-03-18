@@ -183,6 +183,7 @@ void * client_thread(void * vargp){
 	flighter_status * f_s_pt;
 	flighter_op * f_o_pt;
 	uint32_t client_id;
+	uint32_t flighter_id;
 	uint64_t v;
 	ccr_ct * cct_sync_clients_pt;
 	int client_clock;
@@ -249,7 +250,7 @@ void * client_thread(void * vargp){
 
 	while(1){
 		if(client_clock == *room_clock_pt){
-			printf("[CLIENT_THREAD id %d] ready to read from client\n",c_i_pt->id);
+			//printf("[CLIENT_THREAD id %d] ready to read from client\n",c_i_pt->id);
 			if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
 				// operation
 				pthread_mutex_lock(&mut_printf);
@@ -532,6 +533,7 @@ void * room_thread(void * vargp){
 				(*(r_i_pt->clients+i)).fos->op.tic = 0;
 				(*(r_i_pt->clients+i)).fos->s.tic = 0;
 				(*(r_i_pt->clients+i)).fos->s.flighter_id = (*(r_i_pt->clients+i)).flighter_id;
+				(*(r_i_pt->clients+i)).fos->s.user_id = (*(r_i_pt->clients+i)).id;
 				(*(r_i_pt->clients+i)).fos->s.group_id = (*(r_i_pt->clients+i)).group_id;
 				// sync purpose
 				(*(r_i_pt->clients+i)).cct_sync_clients = &cct_sync_clients;
@@ -585,7 +587,7 @@ void * room_thread(void * vargp){
 		sprintf(buf,"%d\n",r_i_pt->size);
 		for(i = 0; i < r_i_pt->size; i++){
 			f_s_pt = &((*(r_i_pt->clients+i)).fos->s);
-			sprintf(temp_buf,"flighter%u of group%u: %d %d %d %d %d %d %d %d %d %d %d %d\n",f_s_pt->flighter_id,f_s_pt->group_id,
+			sprintf(temp_buf,"%u %u %u %d %d %d %d %d %d %d %d %d %d %d %d 1 1 2 1\n",f_s_pt->flighter_id,f_s_pt->user_id,f_s_pt->group_id,
 				f_s_pt->x,f_s_pt->y,f_s_pt->z,f_s_pt->u,f_s_pt->v,f_s_pt->w,f_s_pt->vx,f_s_pt->vy,f_s_pt->vz,
 				f_s_pt->vu,f_s_pt->vv,f_s_pt->vw);
 			strcat(buf,temp_buf);

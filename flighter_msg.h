@@ -52,6 +52,7 @@ typedef struct _flighter_status{
 	uint32_t tic;
 	// position
 	uint32_t flighter_id;
+	uint32_t user_id;
 	uint32_t group_id;
 	int32_t x;
 	int32_t y;
