@@ -188,6 +188,7 @@ void * client_thread(void * vargp){
 	ccr_ct * cct_sync_clients_pt;
 	int client_clock;
 	int * room_clock_pt;
+	ccr_rw_map * cmap_fid2desct_pt;
 	// for for loop only
 	int i;
 
@@ -243,6 +244,7 @@ void * client_thread(void * vargp){
 	cond_room_pt = c_i_pt->cond_room_pt;
 	mut_clients_pt = c_i_pt->mut_clients_pt;
 	cond_clients_pt = c_i_pt->cond_clients_pt;
+	cmap_fid2desct_pt = c_i_pt->cmap_fid2desct;
 
 	pthread_mutex_lock(&mut_printf);
 	printf("[CLIENT_THREAD id %d]local variables initialized successfully\n",c_i_pt->id);
@@ -286,7 +288,8 @@ void * client_thread(void * vargp){
 					for(i = 0; i < net_destroyed_flighter_n;i++){
 						buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 						net_destroyed_flighter_id = (uint32_t)atoi(buf_pt);
-						// TODO: use this info : destroyed flighters
+						ccr_rw_map_query(cmap_fid2desct_pt,net_destroyed_flighter_id,&v);
+						ccr_rw_map_insert(cmap_fid2desct_pt,net_destroyed_flighter_id,v+1);
 					}
 				}
 				else{
@@ -355,7 +358,7 @@ void * client_thread(void * vargp){
 			rio_writen(connfd,c_i_pt->overall_status,strlen(c_i_pt->overall_status));
 			// TODO: end of game
 			if(c_i_pt->overall_status[0] == 'E'){
-				pthread_exit(NULL);
+				break;
 			}
 		}
 	}
@@ -427,10 +430,14 @@ void * room_thread(void * vargp){
 	int i;
 	int room_clock;
 	flighter_status * f_s_pt;
+	int size;
+	int alive_group_id;
+	int game_should_end;
 
 	ccr_ct cct_sync_clients;
 	// for query only
 	int k;
+	uint64_t v;
 	
 	// mutex and cond for clients to wake up this room:
 	// i.e. to info this room that one of the clients has been ready
@@ -440,7 +447,11 @@ void * room_thread(void * vargp){
 	// i.e. to info all clients that synchrnization has been accomplished
 	pthread_mutex_t mut_clients;
 	pthread_cond_t cond_clients;
+	// cmap mapping flighter_id to number of clients that judge this flight to be dead
+	ccr_rw_map cmap_fid2desct;
 
+	ccr_rw_map_init(&cmap_fid2desct);
+	
 	r_i_pt = (room_info *)malloc(sizeof(room_info));
 	r_i_pt->status = 1;
 
@@ -502,10 +513,12 @@ void * room_thread(void * vargp){
 		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 		//TODO: match type
 		//r_i_pt->match_type = (uint32_t)atoi(buf_pt);
-		r_i_pt->match_type = 1;
+		//DEFINITION: 0 player vs fjj 1 practise 2 formal
+		r_i_pt->match_type = (uint32_t)atoi(buf_pt);
 		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 		r_i_pt->size = (uint32_t)atoi(buf_pt);
 		r_i_pt->clients = (client_info *)malloc(r_i_pt->size*sizeof(client_info));
+		r_i_pt->cmap_fid2desct = &cmap_fid2desct;
 		for(i = 0; i < r_i_pt->size; i++){
 			if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
 				// TODO: delete output
@@ -553,6 +566,9 @@ void * room_thread(void * vargp){
 				
 				// overallstatus
 				(*(r_i_pt->clients+i)).overall_status = NULL;
+				// init: 0
+				(*(r_i_pt->clients+i)).cmap_fid2desct = &cmap_fid2desct;
+				ccr_rw_map_insert(&cmap_fid2desct,(*(r_i_pt->clients+i)).flighter_id,0);
 			}
 			else{
 				//TODO: Network problem
@@ -588,11 +604,37 @@ void * room_thread(void * vargp){
 		printf("[ROOM_THREAAD id %d] room sync accomplished clock %d\n",r_i_pt->room_id,room_clock);
 		pthread_mutex_unlock(&mut_printf);
 
-	
 		// TODO: remove this and do a real closure
 		buf[0] = '\0';
-		if(room_clock == 20){
-			sprintf(buf,"END\n1\n");
+		// 1. decide which flighters really are destroyed
+		for(i = 0; i < r_i_pt->size; i++){
+			ccr_rw_map_query(&cmap_fid2desct,(*(r_i_pt->clients+i)).fos->s.flighter_id,&v);
+			if(v > r_i_pt->size/2){
+				(*(r_i_pt->clients+i)).fos->s.alive = 0;
+				pthread_mutex_lock(&mut_printf);
+				printf("[ROOM_THREAD id %d] flighter %d has been destroyed\n",r_i_pt->room_id,(*(r_i_pt->clients+i)).flighter_id);
+				pthread_mutex_unlock(&mut_printf);
+			}
+		}
+		// 2. decide if game ends
+		alive_group_id = -1;
+		game_should_end = 1;
+		for(i = 0; i < r_i_pt->size; i++){
+			if((*(r_i_pt->clients+i)).fos->s.alive = 1){
+				if(alive_group_id == -1){
+					alive_group_id = (*(r_i_pt->clients+i)).fos->s.group_id;
+				}
+				else{
+					if(alive_group_id != (*(r_i_pt->clients+i)).fos->s.group_id){
+						game_should_end = 0;
+					}
+				}
+			}
+		}
+
+
+		if((room_clock == 30 && r_i_pt->match_type == 0) || (game_should_end == 1 && r_i_pt->match_type != 0)){
+			sprintf(buf,"END\n%d\n",alive_group_id);
 			for(i = 0; i < r_i_pt->size; i++){
 				(r_i_pt->clients+i)->overall_status = buf;
 			}
@@ -695,6 +737,7 @@ int main(int argc,char * argv[]){
 	// stdout
 	pthread_mutex_init(&mut_printf,NULL);
 
+	// room_thread counter and client_thread counter
 
 	// the thread that waits for incoming clients
 	// this thread is responsible of assigning a client to its specific room

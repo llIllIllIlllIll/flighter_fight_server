@@ -37,9 +37,11 @@ int ccr_rw_map_insert(ccr_rw_map * cmap,uint64_t k,uint64_t v){
 		slot * cur_slot = cmap->slots[slot_n];
 		while(cur_slot->next != NULL){
 			if(cur_slot->key == k){
+				// overwrite
+				cur_slot->val = v;
 				pthread_rwlock_unlock(&cmap->rwlock);
-				fprintf(stderr,"Error when inserting <%u,%u>: <%u,%u> already exists.\n",k,v,cur_slot->key,cur_slot->val);
-				return -1;
+				free(new_slot);
+				return -2;
 			}
 			cur_slot = cur_slot->next;
 		}
