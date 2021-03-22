@@ -536,6 +536,7 @@ void * room_thread(void * vargp){
 				// can status move to x (x - 1 before)
 				(*(r_i_pt->clients+i)).fos->op.tic = 0;
 				(*(r_i_pt->clients+i)).fos->s.tic = 0;
+				(*(r_i_pt->clients+i)).fos->s.alive = 1;
 				(*(r_i_pt->clients+i)).fos->s.flighter_id = (*(r_i_pt->clients+i)).flighter_id;
 				(*(r_i_pt->clients+i)).fos->s.user_id = (*(r_i_pt->clients+i)).id;
 				(*(r_i_pt->clients+i)).fos->s.group_id = (*(r_i_pt->clients+i)).group_id;
