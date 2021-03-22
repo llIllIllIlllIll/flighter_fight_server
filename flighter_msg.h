@@ -50,6 +50,8 @@ typedef struct _weapon_status{
 // flight status
 typedef struct _flighter_status{
 	uint32_t tic;
+	// is this plane alive? 1 yes 0 no
+	uint32_t alive;
 	// position
 	uint32_t flighter_id;
 	uint32_t user_id;
@@ -154,5 +156,6 @@ typedef struct _daotiaotai_signal{
 	flighter_weapon_load * reload_flighters;
 	uint32_t reload_flighters_n;
 } daotiaotai_signal;
+
 
 #endif
