@@ -13,11 +13,12 @@
 // a client thread is responsible for contacting with it
 sbuf_t sbuf_for_room_server;
 sbuf_t sbuf_for_clients;
-// XXX: no need anymore
-// map <client_id,room_id>
-// ccr_rw_map cmap_cid2rid;
-// map <client_id,client_info>
+// 2 maps:
+// clientid - client info
+// roomid - room info
 ccr_rw_map cmap_cid2cinfo;
+ccr_rw_map cmap_rid2rinfo;
+
 int clients_listenfd;
 ccr_ct cct_rooms;
 ccr_ct cct_clients;
@@ -25,11 +26,16 @@ ccr_ct cct_clients;
 int max_rooms;
 int max_clients;
 
+int director_listenfd;
 // mutex & cond for connecting_s_server_thread
 // purpose: at one time only one client thread connects the connecting_s_server_thread
 pthread_mutex_t mut_s_server;
 pthread_cond_t cond_s_server;
-// 
+// mutex & cond for controller
+pthread_mutex_t mut_con;
+pthread_cond_t cond_con;
+
+
 uint32_t ready_client_id;
 
 // simulink server host & port
@@ -39,7 +45,80 @@ char * s_server_port = NULL;
 // mutex protect STDOUT
 pthread_mutex_t mut_printf;
 
-// TODO: how many this kind of threads should exist?
+// this thread communicates with Director Server and is capable of controlling process
+// in each room 
+void * controller_thread(void * vargp){
+	int connfd;
+	struct sockaddr_storage clientaddr;
+	socklen_t clientlen;
+	rio_t rio;
+	size_t n;
+	char buf[MAXLINE];
+	int con_signal;
+	int reload_flighters_n;
+	int con_room_id;
+	char * buf_pt;
+	uint64_t v;
+	room_info * r_i_pt;
+
+
+	connfd = -1;
+
+	while(connfd < 0){
+		clientlen = sizeof(struct sockaddr_storage);
+		connfd = accept(director_listenfd,(SA *)&clientaddr,&clientlen);
+		rio_readinitb(&rio,connfd);
+		
+		pthread_mutex_lock(&mut_printf);
+		printf("[CONTROLLER_THREAD] Director has connected\n");
+		pthread_mutex_unlock(&mut_printf);
+		
+		while(connfd > 0){
+			if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
+				pthread_mutex_lock(&mut_printf);
+				printf("[CONTROLLER_THREAD] Received content:%s",buf);
+				pthread_mutex_unlock(&mut_printf);
+				
+				con_room_id = atoi(buf);
+				buf_pt = buf;
+				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
+				con_signal = atoi(buf_pt);
+				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
+				reload_flighters_n = atoi(buf);
+				//TODO: currently ignore reload flighters signal
+				//fix later
+
+				ccr_rw_map_query(&cmap_rid2rinfo,con_room_id,&v);
+				r_i_pt = (room_info *)v;
+
+				switch(con_signal){
+					case 0:
+						r_i_pt->status = 1;
+						break;
+					case 1:
+						r_i_pt->status = 0;
+						break;
+					case 2:
+						r_i_pt->status = 1;
+						break;
+					case 3:
+						// TODO: not supported yet
+						r_i_pt->status = 1;
+						break;
+				}
+
+				//printf("[CONTROLLER_THREAD] room_info addr :%u signal:%d status:%d\n",v,con_signal,r_i_pt->status);
+				
+			}
+		}
+	}
+		
+}
+
+
+
+
+// The only worker thread that's responsible of connecting with simulink server
 void * connecting_s_server_thread(void * vargp){
 	rio_t rio;
 	char buf[MAXLINE];
@@ -104,6 +183,7 @@ void * client_thread(void * vargp){
 	flighter_status * f_s_pt;
 	flighter_op * f_o_pt;
 	uint32_t client_id;
+	uint32_t flighter_id;
 	uint64_t v;
 	ccr_ct * cct_sync_clients_pt;
 	int client_clock;
@@ -119,7 +199,9 @@ void * client_thread(void * vargp){
 	uint32_t net_lw_op;
 	int32_t net_destroyed_flighter_n;
 	uint32_t net_destroyed_flighter_id;
-
+	uint32_t timestamp;
+	
+	char * init_status = "1\n1 1 1 1 1 1 1 1 1 1 1 1 1 1 1\n";
 	//
 	pthread_mutex_t * mut_room_pt;
 	pthread_cond_t * cond_room_pt;
@@ -138,6 +220,9 @@ void * client_thread(void * vargp){
 	if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
 		client_id = (uint32_t)atoi(buf);
 	}
+	buf[MAXLINE-1] = 0;
+	//printf("[CLIENT_THREAD id %d] first time message: %s[END]\n",c_i_pt->id,buf);
+	rio_writen(connfd,init_status,strlen(init_status));
 
 	// not 0 means room_thread is not ready yet
 	while(ccr_rw_map_query(&cmap_cid2cinfo,client_id,&v) != 0);
@@ -165,15 +250,20 @@ void * client_thread(void * vargp){
 
 	while(1){
 		if(client_clock == *room_clock_pt){
+			//printf("[CLIENT_THREAD id %d] ready to read from client\n",c_i_pt->id);
 			if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
 				// operation
 				pthread_mutex_lock(&mut_printf);
-				// printf("[CLIENT_THREAD id %d]content read in op of clock %d:%s\n",c_i_pt->id,client_clock,buf);
+				printf("[CLIENT_THREAD id %d]content read in op of clock %d:%s[END]\n",c_i_pt->id,client_clock,buf);
 				pthread_mutex_unlock(&mut_printf);
 
 				buf_pt = buf;
 
 				f_o_pt->tic = client_clock;
+				client_id = (uint32_t)atoi(buf_pt);
+				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
+				timestamp = (uint32_t)atoi(buf_pt);
+				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 				net_pitch_op = (int32_t)atoi(buf_pt);
 				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 				net_roll_op = (int32_t)atoi(buf_pt);
@@ -185,7 +275,7 @@ void * client_thread(void * vargp){
 				net_lw_op = (uint32_t)atoi(buf_pt);
 
 				pthread_mutex_lock(&mut_printf);
-				printf("[CLIENT_THREAD id %d]client thread has processed op\n",c_i_pt->id);
+				printf("[CLIENT_THREAD id %d]client thread has processed op %d %d %d %d %d\n",c_i_pt->id,net_pitch_op,net_roll_op,net_dir_op,net_acc_op,net_lw_op);
 				pthread_mutex_unlock(&mut_printf);
 
 
@@ -263,6 +353,10 @@ void * client_thread(void * vargp){
 
 			// TODO: send overall state of every flighter back to clients
 			rio_writen(connfd,c_i_pt->overall_status,strlen(c_i_pt->overall_status));
+			// TODO: end of game
+			if(c_i_pt->overall_status[0] == 'E'){
+				pthread_exit(NULL);
+			}
 		}
 	}
 
@@ -329,7 +423,7 @@ void * room_thread(void * vargp){
 	char buf[MAXLINE];
 	char temp_buf[MAXLINE];
 	char * buf_pt;
-	room_info r_i;
+	room_info * r_i_pt;
 	int i;
 	int room_clock;
 	flighter_status * f_s_pt;
@@ -347,10 +441,13 @@ void * room_thread(void * vargp){
 	pthread_mutex_t mut_clients;
 	pthread_cond_t cond_clients;
 
+	r_i_pt = (room_info *)malloc(sizeof(room_info));
+	r_i_pt->status = 1;
+
 	pthread_mutex_init(&mut_room,NULL);
 	pthread_cond_init(&cond_room,NULL);
-	r_i.mut = &mut_room;
-	r_i.cond = &cond_room;
+	r_i_pt->mut = &mut_room;
+	r_i_pt->cond = &cond_room;
 
 	pthread_mutex_init(&mut_clients,NULL);
 	pthread_cond_init(&cond_clients,NULL);
@@ -363,7 +460,7 @@ void * room_thread(void * vargp){
 	clientlen = sizeof(struct sockaddr_storage);
 	connfd = sbuf_remove(&sbuf_for_room_server);
 	rio_readinitb(&rio,connfd);
-	
+
 	pthread_mutex_lock(&mut_printf);
 	printf("[ROOM_THREAAD] room connected\n");
 	pthread_mutex_unlock(&mut_printf);
@@ -395,82 +492,84 @@ void * room_thread(void * vargp){
 		buf_pt = buf;
 		// TODO: check if at any time atoi returns 0
 		// TODO: check if at any time strchr returns NULL
-		r_i.room_id = (uint32_t)atoi(buf);
+		r_i_pt->room_id = (uint32_t)atoi(buf);
 		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
-		r_i.room_size = (uint32_t)atoi(buf_pt);
+		r_i_pt->room_size = (uint32_t)atoi(buf_pt);
 		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
-		r_i.simulation_steplength = (uint32_t)atoi(buf_pt);
+		r_i_pt->simulation_steplength = (uint32_t)atoi(buf_pt);
 		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
-		r_i.env_id = (uint32_t)atoi(buf_pt);
+		r_i_pt->env_id = (uint32_t)atoi(buf_pt);
 		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 		//TODO: match type
-		//r_i.match_type = (uint32_t)atoi(buf_pt);
-		r_i.match_type = 1;
+		//r_i_pt->match_type = (uint32_t)atoi(buf_pt);
+		r_i_pt->match_type = 1;
 		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
-		r_i.size = (uint32_t)atoi(buf_pt);
-		r_i.clients = (client_info *)malloc(r_i.size*sizeof(client_info));
-		for(i = 0; i < r_i.size; i++){
+		r_i_pt->size = (uint32_t)atoi(buf_pt);
+		r_i_pt->clients = (client_info *)malloc(r_i_pt->size*sizeof(client_info));
+		for(i = 0; i < r_i_pt->size; i++){
 			if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
 				// TODO: delete output
 				printf("%s",buf);
 				buf_pt = buf;
 				
-				(*(r_i.clients+i)).room_id = r_i.room_id;
+				(*(r_i_pt->clients+i)).room_id = r_i_pt->room_id;
 
-				(*(r_i.clients+i)).id = (uint32_t)atoi(buf_pt);
+				(*(r_i_pt->clients+i)).id = (uint32_t)atoi(buf_pt);
 				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
-				(*(r_i.clients+i)).group_id = (uint32_t)atoi(buf_pt);
+				(*(r_i_pt->clients+i)).group_id = (uint32_t)atoi(buf_pt);
 				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
-				strncpy((*(r_i.clients+i)).host,buf_pt,20);
+				strncpy((*(r_i_pt->clients+i)).host,buf_pt,20);
 				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
-				strncpy((*(r_i.clients+i)).port,buf_pt,8);
+				strncpy((*(r_i_pt->clients+i)).port,buf_pt,8);
 				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
-				(*(r_i.clients+i)).sign = (uint32_t)atoi(buf_pt);
+				(*(r_i_pt->clients+i)).sign = (uint32_t)atoi(buf_pt);
 				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
-				(*(r_i.clients+i)).flighter_id = (uint32_t)atoi(buf_pt);
+				(*(r_i_pt->clients+i)).flighter_id = (uint32_t)atoi(buf_pt);
 				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 				
 				// TODO: delete this
-				//(*(r_i.clients+i)).flighter_type = (uint32_t)atoi(buf_pt);
-				(*(r_i.clients+i)).flighter_type = 1;			
+				//(*(r_i_pt->clients+i)).flighter_type = (uint32_t)atoi(buf_pt);
+				(*(r_i_pt->clients+i)).flighter_type = 1;			
 
-				(*(r_i.clients+i)).fos = (flighter_op_and_status *)malloc(sizeof(flighter_op_and_status));
+				(*(r_i_pt->clients+i)).fos = (flighter_op_and_status *)malloc(sizeof(flighter_op_and_status));
 				// XXX:rules: only when all clients' op tic is x
 				// can status move to x (x - 1 before)
-				(*(r_i.clients+i)).fos->op.tic = 0;
-				(*(r_i.clients+i)).fos->s.tic = 0;
-				(*(r_i.clients+i)).fos->s.flighter_id = (*(r_i.clients+i)).flighter_id;
-				(*(r_i.clients+i)).fos->s.group_id = (*(r_i.clients+i)).group_id;
+				(*(r_i_pt->clients+i)).fos->op.tic = 0;
+				(*(r_i_pt->clients+i)).fos->s.tic = 0;
+				(*(r_i_pt->clients+i)).fos->s.flighter_id = (*(r_i_pt->clients+i)).flighter_id;
+				(*(r_i_pt->clients+i)).fos->s.user_id = (*(r_i_pt->clients+i)).id;
+				(*(r_i_pt->clients+i)).fos->s.group_id = (*(r_i_pt->clients+i)).group_id;
 				// sync purpose
-				(*(r_i.clients+i)).cct_sync_clients = &cct_sync_clients;
+				(*(r_i_pt->clients+i)).cct_sync_clients = &cct_sync_clients;
 				// clock
-				(*(r_i.clients+i)).room_clock_p = &room_clock;
+				(*(r_i_pt->clients+i)).room_clock_p = &room_clock;
 			
-				(*(r_i.clients+i)).mut_room_pt = &mut_room;
-				(*(r_i.clients+i)).cond_room_pt = &cond_room;
+				(*(r_i_pt->clients+i)).mut_room_pt = &mut_room;
+				(*(r_i_pt->clients+i)).cond_room_pt = &cond_room;
 				//
-				(*(r_i.clients+i)).mut_clients_pt = &mut_clients;
-				(*(r_i.clients+i)).cond_clients_pt = &cond_clients;
+				(*(r_i_pt->clients+i)).mut_clients_pt = &mut_clients;
+				(*(r_i_pt->clients+i)).cond_clients_pt = &cond_clients;
 				
 				// overallstatus
-				(*(r_i.clients+i)).overall_status = NULL;
+				(*(r_i_pt->clients+i)).overall_status = NULL;
 			}
 			else{
 				//TODO: Network problem
 			}
 			// map client id to room id
-			ccr_rw_map_insert(&cmap_cid2cinfo,(*(r_i.clients+i)).id,(uint64_t)(r_i.clients+i));
+			ccr_rw_map_insert(&cmap_cid2cinfo,(*(r_i_pt->clients+i)).id,(uint64_t)(r_i_pt->clients+i));
 		}
 	}
 	else{
 		// TODO: Network problem
 	}
+	ccr_rw_map_insert(&cmap_rid2rinfo,r_i_pt->room_id,(uint64_t)r_i_pt);
 
 	rio_writen(connfd,res_content,strlen(res_content));
 	close(connfd);
 
 	pthread_mutex_lock(&mut_printf);
-	printf("[ROOM_THREAAD id %d] room configuration completed, begin real work\n",r_i.room_id);
+	printf("[ROOM_THREAAD id %d] room configuration completed, begin real work\n",r_i_pt->room_id);
 	pthread_mutex_unlock(&mut_printf);
 	// TODO: sync & calc & ... whatever needs be done by a room
 	// 	 use a ccr_counter to let room_thread know when all client_thread s are ready
@@ -478,33 +577,64 @@ void * room_thread(void * vargp){
 	while(1){
 		k = -1;
 		pthread_mutex_lock(&mut_room);
-		while(k != r_i.size){
+		while(k != r_i_pt->size){
 			pthread_cond_wait(&cond_room,&mut_room);
 			ccr_ct_query(&cct_sync_clients,&k);
 		}
 		pthread_mutex_unlock(&mut_room);
 		
 		pthread_mutex_lock(&mut_printf);
-		printf("[ROOM_THREAAD id %d] room sync accomplished clock %d\n",r_i.room_id,room_clock);
+		printf("[ROOM_THREAAD id %d] room sync accomplished clock %d\n",r_i_pt->room_id,room_clock);
 		pthread_mutex_unlock(&mut_printf);
 
+	
+		// TODO: remove this and do a real closure
 		buf[0] = '\0';
-		sprintf(buf,"%d\n",r_i.size);
-		for(i = 0; i < r_i.size; i++){
-			f_s_pt = &((*(r_i.clients+i)).fos->s);
-			sprintf(temp_buf,"flighter%u of group%u: %d %d %d %d %d %d %d %d %d %d %d %d\n",f_s_pt->flighter_id,f_s_pt->group_id,
+		if(room_clock == 20){
+			sprintf(buf,"END\n1\n");
+			for(i = 0; i < r_i_pt->size; i++){
+				(r_i_pt->clients+i)->overall_status = buf;
+			}
+					
+			pthread_mutex_lock(&mut_printf);
+			printf("[ROOM_THREAAD id %d] room status of clock %d:\n%s\n",r_i_pt->room_id,room_clock,buf);
+			pthread_mutex_unlock(&mut_printf);
+
+
+			// when room_clock moves on notify all clients to move on
+			pthread_mutex_lock(&mut_clients);
+			room_clock++;
+			pthread_cond_broadcast(&cond_clients);
+			pthread_mutex_unlock(&mut_clients);
+	
+			ccr_ct_reset(&cct_sync_clients);
+			pthread_exit(NULL);
+		}
+
+		sprintf(buf,"%d\n",r_i_pt->size);
+		for(i = 0; i < r_i_pt->size; i++){
+			f_s_pt = &((*(r_i_pt->clients+i)).fos->s);
+			sprintf(temp_buf,"%u %u %u %d %d %d %d %d %d %d %d %d %d %d %d 1 1 2 1\n",f_s_pt->flighter_id,f_s_pt->user_id,f_s_pt->group_id,
 				f_s_pt->x,f_s_pt->y,f_s_pt->z,f_s_pt->u,f_s_pt->v,f_s_pt->w,f_s_pt->vx,f_s_pt->vy,f_s_pt->vz,
 				f_s_pt->vu,f_s_pt->vv,f_s_pt->vw);
 			strcat(buf,temp_buf);
 		}
-		for(i = 0; i < r_i.size; i++){
-			(r_i.clients+i)->overall_status = buf;
+		for(i = 0; i < r_i_pt->size; i++){
+			(r_i_pt->clients+i)->overall_status = buf;
 		}
 
 		pthread_mutex_lock(&mut_printf);
-		printf("[ROOM_THREAAD id %d] room status of clock %d:\n%s\n",r_i.room_id,room_clock,buf);
+		printf("[ROOM_THREAAD id %d] room status of clock %d:\n%s\n",r_i_pt->room_id,room_clock,buf);
 		pthread_mutex_unlock(&mut_printf);
 
+
+		while(1){
+			if(r_i_pt->status == 1){
+				break;
+			}
+			else{
+			}
+		}
 		// when room_clock moves on notify all clients to move on
 		pthread_mutex_lock(&mut_clients);
 		room_clock++;
@@ -530,24 +660,26 @@ int main(int argc,char * argv[]){
 	socklen_t clientlen;
 	struct sockaddr_storage clientaddr;
 	pthread_t tid;
-	if(argc != 5){
-		fprintf(stderr,"usage: %s <port_for_roomserver> <port_for_clients> <max_rooms> <max_clients>\n",argv[0]);
+	if(argc != 6){
+		fprintf(stderr,"usage: %s <port_for_roomserver> <port_for_clients> <port_for_director> <max_rooms> <max_clients>\n",argv[0]);
 		exit(1);
 	}
 	roomserver_listenfd = open_listenfd(argv[1]);
 	clients_listenfd = open_listenfd(argv[2]);
-	
-	if(roomserver_listenfd < 0 || clients_listenfd < 0){
+	director_listenfd = open_listenfd(argv[3]);
+
+	if(roomserver_listenfd < 0 || clients_listenfd < 0 || director_listenfd < 0){
 		fprintf(stderr,"net error\n");
 		return -1;
 	}
 
-	max_rooms = atoi(argv[3]);
-	max_clients = atoi(argv[4]);
+	max_rooms = atoi(argv[4]);
+	max_clients = atoi(argv[5]);
 	sbuf_init(&sbuf_for_room_server,max_rooms);
 	sbuf_init(&sbuf_for_clients,max_clients);
 			
 	ccr_rw_map_init(&cmap_cid2cinfo);
+	ccr_rw_map_init(&cmap_rid2rinfo);
 	ccr_ct_init(&cct_rooms);
 	ccr_ct_init(&cct_clients);
 
@@ -555,6 +687,9 @@ int main(int argc,char * argv[]){
 	pthread_mutex_init(&mut_s_server,NULL);
 	pthread_cond_init(&cond_s_server,NULL);
 	ready_client_id = 0;
+
+	pthread_mutex_init(&mut_con,NULL);
+	pthread_cond_init(&cond_con,NULL);
 
 	// stdout
 	pthread_mutex_init(&mut_printf,NULL);
@@ -567,6 +702,8 @@ int main(int argc,char * argv[]){
 	// the thread connects s_server
 	pthread_create(&tid,NULL,connecting_s_server_thread,NULL);
 
+	// the thread connecting with director server A.K.A dao tiao tai
+	pthread_create(&tid,NULL,controller_thread,NULL);
 
 	// process msgs from room server
 	while(1){

@@ -52,6 +52,7 @@ typedef struct _flighter_status{
 	uint32_t tic;
 	// position
 	uint32_t flighter_id;
+	uint32_t user_id;
 	uint32_t group_id;
 	int32_t x;
 	int32_t y;
@@ -132,6 +133,7 @@ typedef struct _room_info{
 	uint32_t match_type;
 	client_info * clients;
 	uint32_t size;
+	uint32_t status;
 	// multi thread needed
 	pthread_mutex_t * mut;
 	pthread_cond_t * cond;
