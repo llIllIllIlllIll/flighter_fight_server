@@ -285,11 +285,17 @@ void * client_thread(void * vargp){
 				if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
 					buf_pt = buf;
 					net_destroyed_flighter_n = (int32_t)atoi(buf_pt);
+					pthread_mutex_lock(&mut_printf);
+					printf("[CLIENT_THREAD id %d] buf content line 2:%s\n",c_i_pt->id,buf);
+					pthread_mutex_unlock(&mut_printf);
 					for(i = 0; i < net_destroyed_flighter_n;i++){
 						buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 						net_destroyed_flighter_id = (uint32_t)atoi(buf_pt);
 						ccr_rw_map_query(cmap_fid2desct_pt,net_destroyed_flighter_id,&v);
 						ccr_rw_map_insert(cmap_fid2desct_pt,net_destroyed_flighter_id,v+1);
+						pthread_mutex_lock(&mut_printf);
+						printf("[CLIENT_THREAD id %d] flighter %d detected to be destroyed; cmap new v: %d\n",c_i_pt->id,net_destroyed_flighter_id,v+1);
+						pthread_mutex_unlock(&mut_printf);
 					}
 				}
 				else{
@@ -609,6 +615,9 @@ void * room_thread(void * vargp){
 		// 1. decide which flighters really are destroyed
 		for(i = 0; i < r_i_pt->size; i++){
 			ccr_rw_map_query(&cmap_fid2desct,(*(r_i_pt->clients+i)).fos->s.flighter_id,&v);
+			pthread_mutex_lock(&mut_printf);
+			printf("[ROOM_THREAD id %d] fid:%d destroy count:%d\n",r_i_pt->room_id, (*(r_i_pt->clients+i)).fos->s.flighter_id,v);
+			pthread_mutex_unlock(&mut_printf);
 			if(v > r_i_pt->size/2){
 				(*(r_i_pt->clients+i)).fos->s.alive = 0;
 				pthread_mutex_lock(&mut_printf);
@@ -620,7 +629,7 @@ void * room_thread(void * vargp){
 		alive_group_id = -1;
 		game_should_end = 1;
 		for(i = 0; i < r_i_pt->size; i++){
-			if((*(r_i_pt->clients+i)).fos->s.alive = 1){
+			if((*(r_i_pt->clients+i)).fos->s.alive == 1){
 				if(alive_group_id == -1){
 					alive_group_id = (*(r_i_pt->clients+i)).fos->s.group_id;
 				}

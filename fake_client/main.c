@@ -43,6 +43,9 @@ void * fake_client_thread(void * vargs){
 		if(i%2){
 			sleep(1);
 			char * content = "1 1 1 1 1 1 1\n0\n";
+			if(i == 1){
+				content = "1 1 1 1 1 1 1\n1 1\n";
+			}
 			pthread_mutex_lock(&mut_net);	
 			rio_writen(clientfd,content,strlen(content));
 			pthread_mutex_unlock(&mut_net);

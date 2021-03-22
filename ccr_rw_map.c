@@ -45,9 +45,18 @@ int ccr_rw_map_insert(ccr_rw_map * cmap,uint64_t k,uint64_t v){
 			}
 			cur_slot = cur_slot->next;
 		}
-		cur_slot->next = new_slot;
-		pthread_rwlock_unlock(&cmap->rwlock);
-		return 0;
+		if(cur_slot->key == k){
+			// overwrite
+			cur_slot->val = v;
+			pthread_rwlock_unlock(&cmap->rwlock);
+			free(new_slot);
+			return -2;
+		}
+		else{
+			cur_slot->next = new_slot;
+			pthread_rwlock_unlock(&cmap->rwlock);
+			return 0;
+		}
 	}
 }
 int ccr_rw_map_query(ccr_rw_map * cmap,uint64_t k,uint64_t * v){
