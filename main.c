@@ -363,12 +363,17 @@ void * client_thread(void * vargp){
 			// TODO: send overall state of every flighter back to clients
 			rio_writen(connfd,c_i_pt->overall_status,strlen(c_i_pt->overall_status));
 			// TODO: end of game
-			if(c_i_pt->overall_status[0] == 'E'){
+			if(c_i_pt->overall_status[0] == 'E'){				
 				break;
 			}
 		}
 	}
 
+
+
+	pthread_mutex_lock(&mut_printf);
+	printf("[CLIENT_THREAD id %d] end of game thread exit\n",c_i_pt->id);
+	pthread_mutex_unlock(&mut_printf);
 
 	if(ccr_ct_dec(&cct_clients) != 0){
 		exit(-1);
@@ -660,6 +665,10 @@ void * room_thread(void * vargp){
 			pthread_mutex_unlock(&mut_clients);
 	
 			ccr_ct_reset(&cct_sync_clients);
+			
+			if(ccr_ct_dec(&cct_rooms) != 0){
+				exit(-1);
+			}
 			pthread_exit(NULL);
 		}
 

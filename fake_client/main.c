@@ -42,7 +42,7 @@ void * fake_client_thread(void * vargs){
 	rio_readlineb(&rio,buf,MAXLINE);
 	for(i = 1; i <= clocks*2; i++){
 		if(i%2){
-			sleep(1);
+			//sleep(1);
 			char * content = "1 1 1 1 1 1 1\n0\n";
 			if(match_type != 0 && i == 31){
 				content = "1 1 1 1 1 1 1\n1 1\n";
