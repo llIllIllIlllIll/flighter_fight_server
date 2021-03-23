@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include "ccr_counter.h"
 #include <pthread.h>
-
+#include "ccr_rw_map.h"
 
 #ifndef _FLIGHTER_H
 #define _FLIGHTER_H
@@ -117,6 +117,8 @@ typedef struct _client_info{
 	
 	// status of all flighters that should be sent back to each client
 	char * overall_status;
+	// cmap <flighter_id,number_of_clients_sentence_it_to_death>
+	ccr_rw_map * cmap_fid2desct;
 } client_info;
 
 // single room information:
@@ -139,6 +141,8 @@ typedef struct _room_info{
 	// multi thread needed
 	pthread_mutex_t * mut;
 	pthread_cond_t * cond;
+	// cmap <flighter_id,number_of_clients_sentence_it_to_death>
+	ccr_rw_map * cmap_fid2desct;
 } room_info;
 
 
