@@ -22,6 +22,16 @@ typedef struct _flighter_op{
 	uint32_t launch_weapon;
 } flighter_op;
 
+// fjj struct
+typedef struct _posture{
+	int32_t x;
+	int32_t y;
+	int32_t z;
+	int32_t u;
+	int32_t v;
+	int32_t w;
+} posture;
+
 typedef struct _destroyed_flighter_ids{
 	uint32_t * flighter_ids;
 	uint32_t size;

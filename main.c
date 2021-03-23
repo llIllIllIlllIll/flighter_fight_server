@@ -39,6 +39,7 @@ pthread_cond_t cond_con;
 uint32_t ready_client_id;
 
 // simulink server host & port
+int simulink_listenfd;
 char * s_server_host = NULL;
 char * s_server_port = NULL;
 
@@ -126,20 +127,25 @@ void * connecting_s_server_thread(void * vargp){
 	client_info * ready_c_i_pt;
 	flighter_status * ready_f_s_pt;
 	flighter_op * ready_f_o_pt;
+	int n;
 
 	pthread_detach(pthread_self());
-	int client_fd;
+	socklen_t clientlen;
+	int connfd;
+	struct sockaddr_storage clientaddr;
 
+	posture * p_pt;
 
-	//TODO: below work
-	/*client_fd = open_clientfd(s_server_host,s_server_port);
-	if(client_fd < 0){
-		fprintf(stderr,"ERROR: cannot connect to simulink server.\n");
-		pthread_exit(NULL);
-	}
-	
-	rio_readinitb(&rio,client_fd);*/
-	
+		
+	clientlen = sizeof(struct sockaddr_storage);
+	connfd = accept(simulink_listenfd,(SA *)&clientaddr,&clientlen);
+	rio_readinitb(&rio,connfd);
+
+	pthread_mutex_lock(&mut_printf);
+	printf("[CONNECTING_S_SERVER_THREAD] simulink connected\n");
+	pthread_mutex_unlock(&mut_printf);
+
+	p_pt = (posture *)malloc(sizeof(posture));
 
 	while(1){
 		pthread_mutex_lock(&mut_s_server);
@@ -156,11 +162,22 @@ void * connecting_s_server_thread(void * vargp){
 		ready_f_s_pt = &(ready_c_i_pt->fos->s);
 		ready_f_o_pt = &(ready_c_i_pt->fos->op);
 
+		buf[0] = '\0';
+		p_pt->x = ready_f_s_pt->x;
+		p_pt->y = ready_f_s_pt->y;
+		p_pt->z = ready_f_s_pt->z;
+		p_pt->u = ready_f_s_pt->u;
+		p_pt->v = ready_f_s_pt->v;
+		p_pt->w = ready_f_s_pt->w;
+
+		rio_writen(connfd,(char *)p_pt,sizeof(posture));
+		rio_readnb(&rio,p_pt,sizeof(posture));
+
 		//TODO: according to ready_f_s_pt and ready_f_o_pt calculate a new status
 		//TODO: remember to add 1 in the tic of new status
-		ready_f_s_pt->x++;
-		ready_f_s_pt->y++;
-		ready_f_s_pt->z++;
+		ready_f_s_pt->x = p_pt->x;
+		ready_f_s_pt->y = p_pt->y;
+		ready_f_s_pt->z = p_pt->z;
 		ready_f_s_pt->tic++;
 
 		ready_client_id = 0;
@@ -723,15 +740,16 @@ int main(int argc,char * argv[]){
 	socklen_t clientlen;
 	struct sockaddr_storage clientaddr;
 	pthread_t tid;
-	if(argc != 6){
-		fprintf(stderr,"usage: %s <port_for_roomserver> <port_for_clients> <port_for_director> <max_rooms> <max_clients>\n",argv[0]);
+	if(argc != 7){
+		fprintf(stderr,"usage: %s <port_for_roomserver> <port_for_clients> <port_for_director> <port_for_simulink> <max_rooms> <max_clients>\n",argv[0]);
 		exit(1);
 	}
 	roomserver_listenfd = open_listenfd(argv[1]);
 	clients_listenfd = open_listenfd(argv[2]);
 	director_listenfd = open_listenfd(argv[3]);
+	simulink_listenfd = open_listenfd(argv[4]);
 
-	if(roomserver_listenfd < 0 || clients_listenfd < 0 || director_listenfd < 0){
+	if(roomserver_listenfd < 0 || clients_listenfd < 0 || director_listenfd < 0 || simulink_listenfd <0){
 		fprintf(stderr,"net error\n");
 		return -1;
 	}
