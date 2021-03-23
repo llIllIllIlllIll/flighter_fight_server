@@ -663,14 +663,16 @@ void * room_thread(void * vargp){
 			pthread_exit(NULL);
 		}
 
-		sprintf(buf,"%d\n",r_i_pt->size);
+		sprintf(buf,"%d %d\n%d\n",room_clock,r_i_pt->simulation_steplength,r_i_pt->size);
 		for(i = 0; i < r_i_pt->size; i++){
 			f_s_pt = &((*(r_i_pt->clients+i)).fos->s);
-			sprintf(temp_buf,"%u %u %u %d %d %d %d %d %d %d %d %d %d %d %d 1 1 2 1\n",f_s_pt->flighter_id,f_s_pt->user_id,f_s_pt->group_id,
+			sprintf(temp_buf,"%u %d %d %d %d %d %d %d %d %d %d %d %d 2 1 1 2 1\n",f_s_pt->user_id,
 				f_s_pt->x,f_s_pt->y,f_s_pt->z,f_s_pt->u,f_s_pt->v,f_s_pt->w,f_s_pt->vx,f_s_pt->vy,f_s_pt->vz,
 				f_s_pt->vu,f_s_pt->vv,f_s_pt->vw);
 			strcat(buf,temp_buf);
 		}
+		// weapon status
+		strcat(buf,"0\n");
 		for(i = 0; i < r_i_pt->size; i++){
 			(r_i_pt->clients+i)->overall_status = buf;
 		}

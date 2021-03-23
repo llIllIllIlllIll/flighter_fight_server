@@ -11,6 +11,7 @@ pthread_mutex_t mut_printf;
 int clocks;
 pthread_mutex_t mut_net;
 
+int match_type;
 
 void * fake_client_thread(void * vargs){
 	int local_clientid;
@@ -43,7 +44,7 @@ void * fake_client_thread(void * vargs){
 		if(i%2){
 			sleep(1);
 			char * content = "1 1 1 1 1 1 1\n0\n";
-			if(i == 1){
+			if(match_type != 0 && i == 31){
 				content = "1 1 1 1 1 1 1\n1 1\n";
 			}
 			pthread_mutex_lock(&mut_net);	
@@ -53,6 +54,13 @@ void * fake_client_thread(void * vargs){
 		else{
 			n = 0;
 			buf[0] = '\0';
+			while(n == 0){
+				n = rio_readlineb(&rio,buf,MAXLINE);
+			}
+			if(buf[0] == 'E'){
+				pthread_exit(NULL);
+			}
+			n = 0;
 			while(n == 0){
 				if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
 					clients = atoi(buf);
@@ -73,6 +81,11 @@ void * fake_client_thread(void * vargs){
 					}
 				}
 			}
+			n = 0;
+			while(n == 0){
+				n = rio_readlineb(&rio,buf,MAXLINE);
+			}
+			
 			//pthread_mutex_unlock(&mut_printf);
 		}
 	}
@@ -86,15 +99,17 @@ int main(int argc, char * argv []){
 	int i;
 	int clients;
 	pthread_t * tids;
+	
 
-	if(argc != 5){
-		fprintf(stderr,"usage: %s <host> <port> <clients> <clock_total>\n",argv[0]);
+	if(argc != 6){
+		fprintf(stderr,"usage: %s <host> <port> <clients> <clock_total> <match_type>\n",argv[0]);
 		return -1;
 	}
 	host = argv[1];
 	port = argv[2];
 	clients = atoi(argv[3]);
 	clocks = atoi(argv[4]);
+	match_type = atoi(argv[5]);
 
 	clientfds = (int *)malloc(clients*sizeof(int));
 	rios = (rio_t *)malloc(clients*sizeof(rio_t));
