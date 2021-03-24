@@ -30,6 +30,12 @@ typedef struct _posture{
 	int32_t u;
 	int32_t v;
 	int32_t w;
+	int32_t vx;
+	int32_t vy;
+	int32_t vz;
+	int32_t vu;
+	int32_t vv;
+	int32_t vw;
 } posture;
 
 typedef struct _destroyed_flighter_ids{

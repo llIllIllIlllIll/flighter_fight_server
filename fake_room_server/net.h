@@ -101,7 +101,7 @@ ssize_t rio_readnb(rio_t *rp, void *usrbuf, size_t n){
         if((nread = rio_read(rp,bufp,nleft))<0)
             return -1;
         else if(nread == 0)
-            break;
+            continue;
         nleft -= nread;
         bufp += nread;
     }

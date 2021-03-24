@@ -4,6 +4,7 @@
 #include "ccr_counter.h"
 #include <stdio.h>
 #define MOVE_AHEAD_IN_BUF(p) (strchr(p,' ')+1)
+#define S_SERVER_WORK 0
 // A BRIEF INTRODUCTION TO THIS SERVER:
 // 1. a main thread listens for room server to send room info
 // 2. a secondary main thread listens for clients
@@ -138,8 +139,11 @@ void * connecting_s_server_thread(void * vargp){
 
 		
 	clientlen = sizeof(struct sockaddr_storage);
-	connfd = accept(simulink_listenfd,(SA *)&clientaddr,&clientlen);
-	rio_readinitb(&rio,connfd);
+
+	if(S_SERVER_WORK){
+		connfd = accept(simulink_listenfd,(SA *)&clientaddr,&clientlen);
+		rio_readinitb(&rio,connfd);
+	}
 
 	pthread_mutex_lock(&mut_printf);
 	printf("[CONNECTING_S_SERVER_THREAD] simulink connected\n");
@@ -162,22 +166,38 @@ void * connecting_s_server_thread(void * vargp){
 		ready_f_s_pt = &(ready_c_i_pt->fos->s);
 		ready_f_o_pt = &(ready_c_i_pt->fos->op);
 
+		
 		buf[0] = '\0';
-		p_pt->x = ready_f_s_pt->x;
-		p_pt->y = ready_f_s_pt->y;
-		p_pt->z = ready_f_s_pt->z;
-		p_pt->u = ready_f_s_pt->u;
-		p_pt->v = ready_f_s_pt->v;
-		p_pt->w = ready_f_s_pt->w;
+		if(S_SERVER_WORK){
 
-		rio_writen(connfd,(char *)p_pt,sizeof(posture));
-		rio_readnb(&rio,p_pt,sizeof(posture));
+			p_pt->x = ready_f_s_pt->x;
+			p_pt->y = ready_f_s_pt->y;
+			p_pt->z = ready_f_s_pt->z;
+			p_pt->u = ready_f_s_pt->u;
+			p_pt->v = ready_f_s_pt->v;
+			p_pt->w = ready_f_s_pt->w;
 
-		//TODO: according to ready_f_s_pt and ready_f_o_pt calculate a new status
-		//TODO: remember to add 1 in the tic of new status
-		ready_f_s_pt->x = p_pt->x;
-		ready_f_s_pt->y = p_pt->y;
-		ready_f_s_pt->z = p_pt->z;
+			//XXX: this is the only position that uses rio_readnb
+			rio_readnb(&rio,(char *)p_pt,sizeof(posture));
+			pthread_mutex_lock(&mut_printf);
+			printf("[CONNECTING_S_SERVER_THREAD] receive: %d %d %d\n",p_pt->x,p_pt->y,p_pt->z);
+			pthread_mutex_unlock(&mut_printf);
+
+			rio_writen(connfd,(char *)p_pt,sizeof(posture));
+			pthread_mutex_lock(&mut_printf);
+			printf("[CONNECTING_S_SERVER_THREAD] send: %d %d %d\n",p_pt->x,p_pt->y,p_pt->z);
+			pthread_mutex_unlock(&mut_printf);
+			//TODO: according to ready_f_s_pt and ready_f_o_pt calculate a new status
+			//TODO: remember to add 1 in the tic of new status
+			ready_f_s_pt->x = p_pt->x;
+			ready_f_s_pt->y = p_pt->y;
+			ready_f_s_pt->z = p_pt->z;
+		}
+		else{
+			ready_f_s_pt->x++;
+			ready_f_s_pt->y++;
+			ready_f_s_pt->z++;
+		}
 		ready_f_s_pt->tic++;
 
 		ready_client_id = 0;
@@ -664,7 +684,7 @@ void * room_thread(void * vargp){
 		}
 
 
-		if((room_clock == 30 && r_i_pt->match_type == 0) || (game_should_end == 1 && r_i_pt->match_type != 0)){
+		if((room_clock == 100 && r_i_pt->match_type == 0) || (game_should_end == 1 && r_i_pt->match_type != 0)){
 			sprintf(buf,"END\n%d\n",alive_group_id);
 			for(i = 0; i < r_i_pt->size; i++){
 				(r_i_pt->clients+i)->overall_status = buf;
