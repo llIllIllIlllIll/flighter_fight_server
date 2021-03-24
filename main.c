@@ -36,13 +36,27 @@ pthread_cond_t cond_s_server;
 pthread_mutex_t mut_con;
 pthread_cond_t cond_con;
 
-
+// ready_client_id is used to tell connecting_s_server_thread that one of the clients' status
+// need to be calculated by s_server
 uint32_t ready_client_id;
 
+// ready_posture_pt is used to tell connecting_tf_thread that one of the postures need update
+posture * ready_posture_pt;
+// this signal tells room_thread that a new posture is calculated 
+int tf_ready_signal;
+
 // simulink server host & port
-int simulink_listenfd;
-char * s_server_host = NULL;
-char * s_server_port = NULL;
+int sserver_listenfd_sen;
+int sserver_listenfd_rec;
+
+// target_flighter AKA ba ji
+// tf_listenfd_sen is for this server to send info to target_flighter client
+int tf_listenfd_sen;
+// tf_listenfd_rec is for target_flighter client to send info back to this server
+int tf_listenfd_rec;
+// mutex& cond for flighter_server( or client?)
+pthread_mutex_t mut_tf;
+pthread_cond_t cond_tf;
 
 // mutex protect STDOUT
 pthread_mutex_t mut_printf;
@@ -50,7 +64,9 @@ pthread_mutex_t mut_printf;
 // this thread communicates with Director Server and is capable of controlling process
 // in each room 
 void * controller_thread(void * vargp){
-	int connfd;
+	int connfd;pthread_mutex_lock(&mut_printf);
+	printf("[CONNECTING_S_SERVER_THREAD] simulink connected\n");
+	pthread_mutex_unlock(&mut_printf);
 	struct sockaddr_storage clientaddr;
 	socklen_t clientlen;
 	rio_t rio;
@@ -62,7 +78,9 @@ void * controller_thread(void * vargp){
 	char * buf_pt;
 	uint64_t v;
 	room_info * r_i_pt;
-
+pthread_mutex_lock(&mut_printf);
+	printf("[CONNECTING_S_SERVER_THREAD] simulink connected\n");
+	pthread_mutex_unlock(&mut_printf);
 
 	connfd = -1;
 
@@ -117,7 +135,59 @@ void * controller_thread(void * vargp){
 		
 }
 
+void * connecting_target_flighter_thread(void * vargp){
+	// rio_rec for receiving info from target_flighter 
+	// rio_sen for sending
+	rio_t rio_rec,rio_sen;
+	char buf[MAXLINE];
+	socklen_t clientlen_sen,clientlen_rec;
+	// same as above
+	int connfd_rec,connfd_sen;
+	struct sockaddr_storage clientaddr_sen,clientaddr_rec;
+	posture * tf_posture;
 
+	clientlen_sen = clientlen_rec = sizeof(struct sockaddr_storage);
+
+	tf_posture = (posture *)malloc(sizeof(posture));
+
+	pthread_detach(pthread_self());
+
+	connfd_sen = accept(tf_listenfd_sen,(SA *)&clientaddr_sen,&clientlen_sen);
+	connfd_rec = accept(tf_listenfd_rec,(SA *)&clientaddr_rec,&clientlen_rec);
+
+	rio_readinitb(&rio_sen,tf_listenfd_sen);
+	rio_readinitb(&rio_rec,tf_listenfd_rec);
+
+	pthread_mutex_lock(&mut_printf);
+	printf("[TF_THREAD] target_flighter connected\n");
+	pthread_mutex_unlock(&mut_printf);	
+
+	while(1){
+		pthread_mutex_lock(&mut_tf);
+		while(ready_posture_pt == NULL || tf_ready_signal != 0){
+			pthread_cond_wait(&cond_tf,&mut_tf);
+		}
+		pthread_mutex_lock(&mut_printf);
+		printf("[TF_THREAD] tf_server working posture: %d %d %d %d %d %d %d %d %d %d %d %d\n",ready_posture_pt->x,ready_posture_pt->y,ready_posture_pt->z,
+				ready_posture_pt->u,ready_posture_pt->v,ready_posture_pt->w,ready_posture_pt->vx,ready_posture_pt->vy,ready_posture_pt->vz,
+				ready_posture_pt->vu,ready_posture_pt->vv,ready_posture_pt->vw);
+		pthread_mutex_unlock(&mut_printf);
+
+		rio_writen(connfd_sen,(char *)ready_posture_pt,sizeof(posture));
+		
+		rio_readnb(&rio_rec,(char *)ready_posture_pt,sizeof(posture));
+		pthread_mutex_lock(&mut_printf);
+		printf("[TF_THREAD] new posture: %d %d %d %d %d %d %d %d %d %d %d %d\n",ready_posture_pt->x,ready_posture_pt->y,ready_posture_pt->z,
+				ready_posture_pt->u,ready_posture_pt->v,ready_posture_pt->w,ready_posture_pt->vx,ready_posture_pt->vy,ready_posture_pt->vz,
+				ready_posture_pt->vu,ready_posture_pt->vv,ready_posture_pt->vw);
+		pthread_mutex_unlock(&mut_printf);
+
+		ready_posture_pt = NULL;
+		tf_ready_signal = 1;
+		pthread_cond_broadcast(&cond_tf);
+		pthread_mutex_unlock(&mut_tf);
+	}
+}
 
 
 // The only worker thread that's responsible of connecting with simulink server
@@ -141,7 +211,7 @@ void * connecting_s_server_thread(void * vargp){
 	clientlen = sizeof(struct sockaddr_storage);
 
 	if(S_SERVER_WORK){
-		connfd = accept(simulink_listenfd,(SA *)&clientaddr,&clientlen);
+		connfd = accept(sserver_listenfd_rec,(SA *)&clientaddr,&clientlen);
 		rio_readinitb(&rio,connfd);
 	}
 
@@ -434,6 +504,7 @@ void * waiting_for_clients_thread(void * vargp){
 	char buf[MAXLINE];
 	pthread_t tid;
 	pthread_detach(pthread_self());
+
 	while(1){
 		//TODO
 		clientlen = sizeof(struct sockaddr_storage);
@@ -482,6 +553,11 @@ void * room_thread(void * vargp){
 	int alive_group_id;
 	int game_should_end;
 
+	// for practisse mode only
+	posture * posture_pt;
+	// all target_flighter id 0
+	int tf_id;
+
 	ccr_ct cct_sync_clients;
 	// for query only
 	int k;
@@ -513,6 +589,9 @@ void * room_thread(void * vargp){
 	
 	pthread_detach(pthread_self());
 	
+	posture_pt = (posture *)calloc(1,sizeof(posture));
+	tf_id = 0;
+
 	// TODO:fault check
 	ccr_ct_init(&cct_sync_clients);
 
@@ -567,6 +646,8 @@ void * room_thread(void * vargp){
 		r_i_pt->size = (uint32_t)atoi(buf_pt);
 		r_i_pt->clients = (client_info *)malloc(r_i_pt->size*sizeof(client_info));
 		r_i_pt->cmap_fid2desct = &cmap_fid2desct;
+		// fid 0: target flighter 
+		ccr_rw_map_insert(&cmap_fid2desct,0,0);
 		for(i = 0; i < r_i_pt->size; i++){
 			if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
 				// TODO: delete output
@@ -651,8 +732,25 @@ void * room_thread(void * vargp){
 		pthread_mutex_lock(&mut_printf);
 		printf("[ROOM_THREAAD id %d] room sync accomplished clock %d\n",r_i_pt->room_id,room_clock);
 		pthread_mutex_unlock(&mut_printf);
+		// when a room_thread is asking tf_thread to work
+		// it sets tf_ready_signal to 0
+		// and when tf_thread finishes working
+		// it sets tf_ready_siganl to 1
+		pthread_mutex_lock(&mut_tf);
+		while(ready_posture_pt != NULL || tf_ready_signal != 1){
+			pthread_cond_wait(&cond_tf,&mut_tf);
+		}
+		ready_posture_pt = posture_pt;
+		tf_ready_signal = 0;
+		pthread_cond_broadcast(&cond_tf);
+		pthread_mutex_unlock(&mut_tf);
+		// waits for tf_thread to complete
+		while(tf_ready_signal != 1){
+			continue;
+		}
 
-		// TODO: remove this and do a real closure
+
+		// TODO: deal with target_flighter getting destroyed
 		buf[0] = '\0';
 		// 1. decide which flighters really are destroyed
 		for(i = 0; i < r_i_pt->size; i++){
@@ -670,21 +768,33 @@ void * room_thread(void * vargp){
 		// 2. decide if game ends
 		alive_group_id = -1;
 		game_should_end = 1;
-		for(i = 0; i < r_i_pt->size; i++){
-			if((*(r_i_pt->clients+i)).fos->s.alive == 1){
-				if(alive_group_id == -1){
-					alive_group_id = (*(r_i_pt->clients+i)).fos->s.group_id;
-				}
-				else{
-					if(alive_group_id != (*(r_i_pt->clients+i)).fos->s.group_id){
-						game_should_end = 0;
+		if(r_i_pt->match_type == 0){
+			ccr_rw_map_query(&cmap_fid2desct,0,&v);
+			if(v > r_i_pt->size /2){
+				game_should_end = 1;
+				alive_group_id = (*(r_i_pt->clients)).fos->s.group_id;
+			}
+			else{
+				game_should_end = 0;
+			}
+
+		}
+		else{
+			for(i = 0; i < r_i_pt->size; i++){
+				if((*(r_i_pt->clients+i)).fos->s.alive == 1){
+					if(alive_group_id == -1){
+						alive_group_id = (*(r_i_pt->clients+i)).fos->s.group_id;
+					}
+					else{
+						if(alive_group_id != (*(r_i_pt->clients+i)).fos->s.group_id){
+							game_should_end = 0;
+						}
 					}
 				}
 			}
 		}
 
-
-		if((room_clock == 100 && r_i_pt->match_type == 0) || (game_should_end == 1 && r_i_pt->match_type != 0)){
+		if(game_should_end == 1){
 			sprintf(buf,"END\n%d\n",alive_group_id);
 			for(i = 0; i < r_i_pt->size; i++){
 				(r_i_pt->clients+i)->overall_status = buf;
@@ -709,7 +819,7 @@ void * room_thread(void * vargp){
 			pthread_exit(NULL);
 		}
 
-		sprintf(buf,"%d %d\n%d\n",room_clock,r_i_pt->simulation_steplength,r_i_pt->size);
+		sprintf(buf,"%d %d\n%d\n",room_clock,r_i_pt->simulation_steplength,(r_i_pt->match_type == 0?r_i_pt->size+1:r_i_pt->size));
 		for(i = 0; i < r_i_pt->size; i++){
 			f_s_pt = &((*(r_i_pt->clients+i)).fos->s);
 			sprintf(temp_buf,"%u %d %d %d %d %d %d %d %d %d %d %d %d 2 1 1 2 1\n",f_s_pt->user_id,
@@ -717,6 +827,14 @@ void * room_thread(void * vargp){
 				f_s_pt->vu,f_s_pt->vv,f_s_pt->vw);
 			strcat(buf,temp_buf);
 		}
+		// practise mode: add target_flighter
+		if(r_i_pt->match_type == 0){
+			sprintf(temp_buf,"%u %d %d %d %d %d %d %d %d %d %d %d %d 2 1 1 2 1\n",tf_id,
+				posture_pt->x,posture_pt->y,posture_pt->z,posture_pt->u,posture_pt->v,posture_pt->w,posture_pt->vx,posture_pt->vy,posture_pt->vz,
+				posture_pt->vu,posture_pt->vv,posture_pt->vw);
+			strcat(buf,temp_buf);
+		}
+
 		// weapon status
 		strcat(buf,"0\n");
 		for(i = 0; i < r_i_pt->size; i++){
@@ -760,22 +878,31 @@ int main(int argc,char * argv[]){
 	socklen_t clientlen;
 	struct sockaddr_storage clientaddr;
 	pthread_t tid;
-	if(argc != 7){
-		fprintf(stderr,"usage: %s <port_for_roomserver> <port_for_clients> <port_for_director> <port_for_simulink> <max_rooms> <max_clients>\n",argv[0]);
+	if(argc != 10){
+		fprintf(stderr,"usage: %s <port_for_roomserver> <port_for_clients> <port_for_director> <port_for_tf_send> <port_for_tf_receive> <port_for_model_server_send> <port_for_model_server_receive> <max_rooms> <max_clients>\n",argv[0]);
 		exit(1);
 	}
 	roomserver_listenfd = open_listenfd(argv[1]);
 	clients_listenfd = open_listenfd(argv[2]);
 	director_listenfd = open_listenfd(argv[3]);
-	simulink_listenfd = open_listenfd(argv[4]);
+	tf_listenfd_sen = open_listenfd(argv[4]);
+	tf_listenfd_rec = open_listenfd(argv[5]);
+	if(S_SERVER_WORK){
+		sserver_listenfd_sen = open_listenfd(argv[6]);
+		sserver_listenfd_rec = open_listenfd(argv[7]);
+		if(sserver_listenfd_sen < 0 || sserver_listenfd_rec < 0){
+			fprintf(stderr,"net error\n");
+			return -1;
+		}
+	}
 
-	if(roomserver_listenfd < 0 || clients_listenfd < 0 || director_listenfd < 0 || simulink_listenfd <0){
+	if(roomserver_listenfd < 0 || clients_listenfd < 0 || director_listenfd < 0 || tf_listenfd_sen <0 || tf_listenfd_rec < 0){
 		fprintf(stderr,"net error\n");
 		return -1;
 	}
 
-	max_rooms = atoi(argv[4]);
-	max_clients = atoi(argv[5]);
+	max_rooms = atoi(argv[8]);
+	max_clients = atoi(argv[9]);
 	sbuf_init(&sbuf_for_room_server,max_rooms);
 	sbuf_init(&sbuf_for_clients,max_clients);
 			
@@ -788,9 +915,14 @@ int main(int argc,char * argv[]){
 	pthread_mutex_init(&mut_s_server,NULL);
 	pthread_cond_init(&cond_s_server,NULL);
 	ready_client_id = 0;
-
+	
+	// mutex & cond for controller
 	pthread_mutex_init(&mut_con,NULL);
 	pthread_cond_init(&cond_con,NULL);
+	// mutex & cond for target flighter server
+	pthread_mutex_init(&mut_tf,NULL);
+	pthread_cond_init(&cond_tf,NULL);
+	ready_posture_pt = NULL;	
 
 	// stdout
 	pthread_mutex_init(&mut_printf,NULL);
