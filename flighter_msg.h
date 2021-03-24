@@ -6,6 +6,8 @@
 
 #ifndef _FLIGHTER_H
 #define _FLIGHTER_H
+#define ROLE_SEND 0
+#define ROLE_RECV 1
 // flight operation: sent by clients to this server
 // launch_weapon: 0 no 1 launch a missile 2 shoot a bullet 3 both
 typedef struct _flighter_op{
@@ -37,6 +39,10 @@ typedef struct _posture{
 	int32_t vv;
 	int32_t vw;
 } posture;
+typedef struct _socket_role{
+	int32_t id;
+	int32_t type; // 0 send 1 recv 
+} socket_role;
 
 typedef struct _destroyed_flighter_ids{
 	uint32_t * flighter_ids;

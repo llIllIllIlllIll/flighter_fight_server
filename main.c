@@ -45,15 +45,11 @@ posture * ready_posture_pt;
 // this signal tells room_thread that a new posture is calculated 
 int tf_ready_signal;
 
-// simulink server host & port
-int sserver_listenfd_sen;
-int sserver_listenfd_rec;
+// model server
+int sserver_listenfd;
 
 // target_flighter AKA ba ji
-// tf_listenfd_sen is for this server to send info to target_flighter client
-int tf_listenfd_sen;
-// tf_listenfd_rec is for target_flighter client to send info back to this server
-int tf_listenfd_rec;
+int tf_listenfd;
 // mutex& cond for flighter_server( or client?)
 pthread_mutex_t mut_tf;
 pthread_cond_t cond_tf;
@@ -78,7 +74,7 @@ void * controller_thread(void * vargp){
 	char * buf_pt;
 	uint64_t v;
 	room_info * r_i_pt;
-pthread_mutex_lock(&mut_printf);
+	pthread_mutex_lock(&mut_printf);
 	printf("[CONNECTING_S_SERVER_THREAD] simulink connected\n");
 	pthread_mutex_unlock(&mut_printf);
 
@@ -138,25 +134,44 @@ pthread_mutex_lock(&mut_printf);
 void * connecting_target_flighter_thread(void * vargp){
 	// rio_rec for receiving info from target_flighter 
 	// rio_sen for sending
-	rio_t rio_rec,rio_sen;
+	rio_t rio;
 	char buf[MAXLINE];
-	socklen_t clientlen_sen,clientlen_rec;
+	socklen_t clientlen;
 	// same as above
-	int connfd_rec,connfd_sen;
-	struct sockaddr_storage clientaddr_sen,clientaddr_rec;
+	int connfd_rec,connfd_sen,connfd;
+	struct sockaddr_storage clientaddr;
 	posture * tf_posture;
+	socket_role * role;
 
-	clientlen_sen = clientlen_rec = sizeof(struct sockaddr_storage);
+	clientlen = sizeof(struct sockaddr_storage);
 
 	tf_posture = (posture *)malloc(sizeof(posture));
+	role = (socket_role *)malloc(sizeof(socket_role));
 
 	pthread_detach(pthread_self());
 
-	connfd_sen = accept(tf_listenfd_sen,(SA *)&clientaddr_sen,&clientlen_sen);
-	connfd_rec = accept(tf_listenfd_rec,(SA *)&clientaddr_rec,&clientlen_rec);
+	connfd = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
 
-	rio_readinitb(&rio_sen,tf_listenfd_sen);
-	rio_readinitb(&rio_rec,tf_listenfd_rec);
+	rio_readinitb(&rio,connfd);
+	rio_readnb(&rio,role,sizeof(socket_role));
+
+	if(role->type == ROLE_SEND){
+		connfd_sen = connfd;
+		connfd = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
+		connfd_rec = connfd;
+		rio_readinitb(&rio,connfd_rec);
+	}
+	else if(role->type == ROLE_RECV){
+		connfd_rec = connfd;
+		connfd_sen = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
+	}
+	else{
+		pthread_mutex_lock(&mut_printf);
+		fprintf(stderr,"[TF_THREAD] wrong pack\n");
+		pthread_mutex_unlock(&mut_printf);
+		pthread_exit(NULL);
+	}
+	
 
 	pthread_mutex_lock(&mut_printf);
 	printf("[TF_THREAD] target_flighter connected\n");
@@ -175,7 +190,7 @@ void * connecting_target_flighter_thread(void * vargp){
 
 		rio_writen(connfd_sen,(char *)ready_posture_pt,sizeof(posture));
 		
-		rio_readnb(&rio_rec,(char *)ready_posture_pt,sizeof(posture));
+		rio_readnb(&rio,(char *)ready_posture_pt,sizeof(posture));
 		pthread_mutex_lock(&mut_printf);
 		printf("[TF_THREAD] new posture: %d %d %d %d %d %d %d %d %d %d %d %d\n",ready_posture_pt->x,ready_posture_pt->y,ready_posture_pt->z,
 				ready_posture_pt->u,ready_posture_pt->v,ready_posture_pt->w,ready_posture_pt->vx,ready_posture_pt->vy,ready_posture_pt->vz,
@@ -211,7 +226,7 @@ void * connecting_s_server_thread(void * vargp){
 	clientlen = sizeof(struct sockaddr_storage);
 
 	if(S_SERVER_WORK){
-		connfd = accept(sserver_listenfd_rec,(SA *)&clientaddr,&clientlen);
+		connfd = accept(sserver_listenfd,(SA *)&clientaddr,&clientlen);
 		rio_readinitb(&rio,connfd);
 	}
 
@@ -878,31 +893,29 @@ int main(int argc,char * argv[]){
 	socklen_t clientlen;
 	struct sockaddr_storage clientaddr;
 	pthread_t tid;
-	if(argc != 10){
-		fprintf(stderr,"usage: %s <port_for_roomserver> <port_for_clients> <port_for_director> <port_for_tf_send> <port_for_tf_receive> <port_for_model_server_send> <port_for_model_server_receive> <max_rooms> <max_clients>\n",argv[0]);
+	if(argc != 8){
+		fprintf(stderr,"usage: %s <port_for_roomserver> <port_for_clients> <port_for_director> <port_for_tf> <port_for_model_server> <max_rooms> <max_clients>\n",argv[0]);
 		exit(1);
 	}
 	roomserver_listenfd = open_listenfd(argv[1]);
 	clients_listenfd = open_listenfd(argv[2]);
 	director_listenfd = open_listenfd(argv[3]);
-	tf_listenfd_sen = open_listenfd(argv[4]);
-	tf_listenfd_rec = open_listenfd(argv[5]);
+	tf_listenfd = open_listenfd(argv[4]);
 	if(S_SERVER_WORK){
-		sserver_listenfd_sen = open_listenfd(argv[6]);
-		sserver_listenfd_rec = open_listenfd(argv[7]);
-		if(sserver_listenfd_sen < 0 || sserver_listenfd_rec < 0){
+		sserver_listenfd = open_listenfd(argv[5]);
+		if(sserver_listenfd < 0){
 			fprintf(stderr,"net error\n");
 			return -1;
 		}
 	}
 
-	if(roomserver_listenfd < 0 || clients_listenfd < 0 || director_listenfd < 0 || tf_listenfd_sen <0 || tf_listenfd_rec < 0){
+	if(roomserver_listenfd < 0 || clients_listenfd < 0 || director_listenfd < 0 || tf_listenfd < 0){
 		fprintf(stderr,"net error\n");
 		return -1;
 	}
 
-	max_rooms = atoi(argv[8]);
-	max_clients = atoi(argv[9]);
+	max_rooms = atoi(argv[6]);
+	max_clients = atoi(argv[7]);
 	sbuf_init(&sbuf_for_room_server,max_rooms);
 	sbuf_init(&sbuf_for_clients,max_clients);
 			
