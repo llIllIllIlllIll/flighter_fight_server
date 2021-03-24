@@ -60,9 +60,7 @@ pthread_mutex_t mut_printf;
 // this thread communicates with Director Server and is capable of controlling process
 // in each room 
 void * controller_thread(void * vargp){
-	int connfd;pthread_mutex_lock(&mut_printf);
-	printf("[CONNECTING_S_SERVER_THREAD] simulink connected\n");
-	pthread_mutex_unlock(&mut_printf);
+	int connfd;
 	struct sockaddr_storage clientaddr;
 	socklen_t clientlen;
 	rio_t rio;
@@ -74,9 +72,6 @@ void * controller_thread(void * vargp){
 	char * buf_pt;
 	uint64_t v;
 	room_info * r_i_pt;
-	pthread_mutex_lock(&mut_printf);
-	printf("[CONNECTING_S_SERVER_THREAD] simulink connected\n");
-	pthread_mutex_unlock(&mut_printf);
 
 	connfd = -1;
 
@@ -160,10 +155,13 @@ void * connecting_target_flighter_thread(void * vargp){
 		connfd = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
 		connfd_rec = connfd;
 		rio_readinitb(&rio,connfd_rec);
+		rio_readnb(&rio,role,sizeof(socket_role));
 	}
 	else if(role->type == ROLE_RECV){
 		connfd_rec = connfd;
 		connfd_sen = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
+		rio_readinitb(&rio,connfd_sen);
+		rio_readnb(&rio,role,sizeof(socket_role));
 	}
 	else{
 		pthread_mutex_lock(&mut_printf);
@@ -171,6 +169,7 @@ void * connecting_target_flighter_thread(void * vargp){
 		pthread_mutex_unlock(&mut_printf);
 		pthread_exit(NULL);
 	}
+	rio_readinitb(&rio,connfd_rec);
 	
 
 	pthread_mutex_lock(&mut_printf);
@@ -179,7 +178,8 @@ void * connecting_target_flighter_thread(void * vargp){
 
 	while(1){
 		pthread_mutex_lock(&mut_tf);
-		while(ready_posture_pt == NULL || tf_ready_signal != 0){
+		// not NULL and 1 means OK
+		while(ready_posture_pt == NULL){
 			pthread_cond_wait(&cond_tf,&mut_tf);
 		}
 		pthread_mutex_lock(&mut_printf);
@@ -196,9 +196,8 @@ void * connecting_target_flighter_thread(void * vargp){
 				ready_posture_pt->u,ready_posture_pt->v,ready_posture_pt->w,ready_posture_pt->vx,ready_posture_pt->vy,ready_posture_pt->vz,
 				ready_posture_pt->vu,ready_posture_pt->vv,ready_posture_pt->vw);
 		pthread_mutex_unlock(&mut_printf);
-
+		// NULL and 0 means not OK
 		ready_posture_pt = NULL;
-		tf_ready_signal = 1;
 		pthread_cond_broadcast(&cond_tf);
 		pthread_mutex_unlock(&mut_tf);
 	}
@@ -728,6 +727,10 @@ void * room_thread(void * vargp){
 
 	rio_writen(connfd,res_content,strlen(res_content));
 	close(connfd);
+	
+	posture_pt->x = r_i_pt->room_id % 2 ? 100*1000 : 0;
+	posture_pt->y = r_i_pt->room_id % 2 ? 0 : 100*1000;
+	posture_pt->z = 1*1000;
 
 	pthread_mutex_lock(&mut_printf);
 	printf("[ROOM_THREAAD id %d] room configuration completed, begin real work\n",r_i_pt->room_id);
@@ -751,19 +754,28 @@ void * room_thread(void * vargp){
 		// it sets tf_ready_signal to 0
 		// and when tf_thread finishes working
 		// it sets tf_ready_siganl to 1
-		pthread_mutex_lock(&mut_tf);
-		while(ready_posture_pt != NULL || tf_ready_signal != 1){
-			pthread_cond_wait(&cond_tf,&mut_tf);
-		}
-		ready_posture_pt = posture_pt;
-		tf_ready_signal = 0;
-		pthread_cond_broadcast(&cond_tf);
-		pthread_mutex_unlock(&mut_tf);
-		// waits for tf_thread to complete
-		while(tf_ready_signal != 1){
-			continue;
-		}
+		if(r_i_pt->match_type == 0){
+			pthread_mutex_lock(&mut_tf);
+			while(ready_posture_pt != NULL){
+				pthread_cond_wait(&cond_tf,&mut_tf);
+			}
+			pthread_mutex_lock(&mut_printf);
+			printf("[ROOM_THREAAD id %d] asking target flighter server to work\n",r_i_pt->room_id);
+			pthread_mutex_unlock(&mut_printf);
 
+			ready_posture_pt = posture_pt;
+			pthread_cond_broadcast(&cond_tf);
+			pthread_mutex_unlock(&mut_tf);
+			// waits for tf_thread to complete
+			while(ready_posture_pt != NULL){
+				continue;
+			}
+			pthread_mutex_lock(&mut_printf);
+			printf("[ROOM_THREAAD id %d] target flighter server work completed\n",r_i_pt->room_id);
+			pthread_mutex_unlock(&mut_printf);
+
+
+		}
 
 		// TODO: deal with target_flighter getting destroyed
 		buf[0] = '\0';
@@ -936,7 +948,7 @@ int main(int argc,char * argv[]){
 	pthread_mutex_init(&mut_tf,NULL);
 	pthread_cond_init(&cond_tf,NULL);
 	ready_posture_pt = NULL;	
-
+	tf_ready_signal = 1;
 	// stdout
 	pthread_mutex_init(&mut_printf,NULL);
 
@@ -951,6 +963,8 @@ int main(int argc,char * argv[]){
 
 	// the thread connecting with director server A.K.A dao tiao tai
 	pthread_create(&tid,NULL,controller_thread,NULL);
+	
+	pthread_create(&tid,NULL,connecting_target_flighter_thread,NULL);
 
 	// process msgs from room server
 	while(1){
@@ -974,4 +988,3 @@ int main(int argc,char * argv[]){
 	// TODO: pthread_join all threads
 	return 0;
 }
-
