@@ -1,5 +1,5 @@
 // 2021.3.20 added MAX_WAITING_MSEC into rio_readnb and rio_readlineb
-
+// among them added new return val for rio_readlineb: -2 means timeout
 # include <arpa/inet.h>
 # include <sys/socket.h>
 # include <sys/types.h>
@@ -97,7 +97,10 @@ ssize_t rio_readlineb(rio_t *rp,void *usrbuf,size_t maxlen){
 	    else if(n == 1)
                 return 0;
             else 
-                break;
+	    {
+	    	*bufp = 0;
+		return -2;
+	    }
         }
         else
         {
