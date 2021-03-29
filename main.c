@@ -216,24 +216,46 @@ void * connecting_s_server_thread(void * vargp){
 
 	pthread_detach(pthread_self());
 	socklen_t clientlen;
-	int connfd;
+	int connfd,connfd_rec,connfd_sen;
 	struct sockaddr_storage clientaddr;
 
 	posture * p_pt;
+	socket_role * role;
 
-		
+	role = (socket_role *)malloc(sizeof(socket_role));	
+
 	clientlen = sizeof(struct sockaddr_storage);
 
 	if(S_SERVER_WORK){
-		connfd = accept(sserver_listenfd,(SA *)&clientaddr,&clientlen);
+		connfd = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
 		rio_readinitb(&rio,connfd);
+		rio_readnb(&rio,role,sizeof(socket_role));
+		if(role->type == ROLE_SEND){
+			connfd_sen = connfd;
+			connfd = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
+			connfd_rec = connfd;
+			rio_readinitb(&rio,connfd_rec);
+			rio_readnb(&rio,role,sizeof(socket_role));
+		}
+		else if(role->type == ROLE_RECV){
+			connfd_rec = connfd;
+			connfd_sen = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
+			rio_readinitb(&rio,connfd_sen);
+			rio_readnb(&rio,role,sizeof(socket_role));
+		}
+		else{
+			pthread_mutex_lock(&mut_printf);
+			fprintf(stderr,"[CONNECTING_S_SERVER_THREAD] wrong pack\n");
+			pthread_mutex_unlock(&mut_printf);
+			pthread_exit(NULL);
+		}
+		rio_readinitb(&rio,connfd_rec);
 	}
 
 	pthread_mutex_lock(&mut_printf);
 	printf("[CONNECTING_S_SERVER_THREAD] simulink connected\n");
 	pthread_mutex_unlock(&mut_printf);
 
-	p_pt = (posture *)malloc(sizeof(posture));
 
 	while(1){
 		pthread_mutex_lock(&mut_s_server);

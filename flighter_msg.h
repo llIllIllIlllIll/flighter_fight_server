@@ -159,6 +159,7 @@ typedef struct _room_info{
 	uint32_t match_type;
 	client_info * clients;
 	uint32_t size;
+	// status is used when a Director decides to pause a room's progress
 	uint32_t status;
 	// multi thread needed
 	pthread_mutex_t * mut;
