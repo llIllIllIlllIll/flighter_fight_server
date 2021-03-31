@@ -94,8 +94,6 @@ ssize_t rio_readlineb(rio_t *rp,void *usrbuf,size_t maxlen){
 	    if(current - start < MAX_WAITING_MSEC){
 	    	continue;
 	    }	    
-	    else if(n == 1)
-                return 0;
             else 
 	    {
 	    	*bufp = 0;

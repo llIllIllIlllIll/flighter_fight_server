@@ -3,8 +3,14 @@
 #include "ccr_rw_map.h"
 #include "ccr_counter.h"
 #include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 #define MOVE_AHEAD_IN_BUF(p) (strchr(p,' ')+1)
 #define S_SERVER_WORK 0
+#define TARGET_FLIGHTER_WORK 0
+// This macro is used to check return value of rio_readnb and rio_readlineb
+// and when dealing with rio_readlineb n should be set to 0
+#define REC_BYTES_CHECK(rec_bytes,n,msg); if((rec_bytes)<(n)){pthread_mutex_lock(&mut_printf);fprintf(stderr,msg);pthread_mutex_unlock(&mut_printf);}
 // A BRIEF INTRODUCTION TO THIS SERVER:
 // 1. a main thread listens for room server to send room info
 // 2. a secondary main thread listens for clients
@@ -121,6 +127,7 @@ void * controller_thread(void * vargp){
 				//printf("[CONTROLLER_THREAD] room_info addr :%u signal:%d status:%d\n",v,con_signal,r_i_pt->status);
 				
 			}
+			REC_BYTES_CHECK(n,0,"****** E R R O R: timeout in connecting to director ******\n");
 		}
 	}
 		
@@ -137,6 +144,7 @@ void * connecting_target_flighter_thread(void * vargp){
 	struct sockaddr_storage clientaddr;
 	posture * tf_posture;
 	socket_role * role;
+	int rec_bytes;
 
 	clientlen = sizeof(struct sockaddr_storage);
 
@@ -148,20 +156,21 @@ void * connecting_target_flighter_thread(void * vargp){
 	connfd = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
 
 	rio_readinitb(&rio,connfd);
-	rio_readnb(&rio,role,sizeof(socket_role));
+	rec_bytes = rio_readnb(&rio,role,sizeof(socket_role));
+	REC_BYTES_CHECK(rec_bytes,sizeof(socket_role),"****** E R R O R: timeout in connecting to target flighter server ******\n");
 
 	if(role->type == ROLE_SEND){
 		connfd_sen = connfd;
 		connfd = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
 		connfd_rec = connfd;
 		rio_readinitb(&rio,connfd_rec);
-		rio_readnb(&rio,role,sizeof(socket_role));
+		rec_bytes = rio_readnb(&rio,role,sizeof(socket_role));
 	}
 	else if(role->type == ROLE_RECV){
 		connfd_rec = connfd;
 		connfd_sen = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
 		rio_readinitb(&rio,connfd_sen);
-		rio_readnb(&rio,role,sizeof(socket_role));
+		rec_bytes = rio_readnb(&rio,role,sizeof(socket_role));
 	}
 	else{
 		pthread_mutex_lock(&mut_printf);
@@ -169,6 +178,9 @@ void * connecting_target_flighter_thread(void * vargp){
 		pthread_mutex_unlock(&mut_printf);
 		pthread_exit(NULL);
 	}
+	REC_BYTES_CHECK(rec_bytes,sizeof(socket_role),"****** E R R O R: timeout in connecting to target flighter server ******\n");
+
+	
 	rio_readinitb(&rio,connfd_rec);
 	
 
@@ -190,7 +202,9 @@ void * connecting_target_flighter_thread(void * vargp){
 
 		rio_writen(connfd_sen,(char *)ready_posture_pt,sizeof(posture));
 		
-		rio_readnb(&rio,(char *)ready_posture_pt,sizeof(posture));
+		rec_bytes = rio_readnb(&rio,(char *)ready_posture_pt,sizeof(posture));
+		REC_BYTES_CHECK(rec_bytes,sizeof(socket_role),"****** E R R O R: timeout in connecting to target flighter server ******\n");
+
 		pthread_mutex_lock(&mut_printf);
 		printf("[TF_THREAD] new posture: %d %d %d %d %d %d %d %d %d %d %d %d\n",ready_posture_pt->x,ready_posture_pt->y,ready_posture_pt->z,
 				ready_posture_pt->u,ready_posture_pt->v,ready_posture_pt->w,ready_posture_pt->vx,ready_posture_pt->vy,ready_posture_pt->vz,
@@ -213,6 +227,7 @@ void * connecting_s_server_thread(void * vargp){
 	flighter_status * ready_f_s_pt;
 	flighter_op * ready_f_o_pt;
 	int n;
+	int rec_bytes;
 
 	pthread_detach(pthread_self());
 	socklen_t clientlen;
@@ -229,19 +244,20 @@ void * connecting_s_server_thread(void * vargp){
 	if(S_SERVER_WORK){
 		connfd = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
 		rio_readinitb(&rio,connfd);
-		rio_readnb(&rio,role,sizeof(socket_role));
+		rec_bytes = rio_readnb(&rio,role,sizeof(socket_role));
+		REC_BYTES_CHECK(rec_bytes,sizeof(socket_role),"****** E R R O R: timeout in connecting to s server ******\n");
 		if(role->type == ROLE_SEND){
 			connfd_sen = connfd;
 			connfd = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
 			connfd_rec = connfd;
 			rio_readinitb(&rio,connfd_rec);
-			rio_readnb(&rio,role,sizeof(socket_role));
+			rec_bytes = rio_readnb(&rio,role,sizeof(socket_role));
 		}
 		else if(role->type == ROLE_RECV){
 			connfd_rec = connfd;
 			connfd_sen = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
 			rio_readinitb(&rio,connfd_sen);
-			rio_readnb(&rio,role,sizeof(socket_role));
+		 	rec_bytes = rio_readnb(&rio,role,sizeof(socket_role));
 		}
 		else{
 			pthread_mutex_lock(&mut_printf);
@@ -249,6 +265,7 @@ void * connecting_s_server_thread(void * vargp){
 			pthread_mutex_unlock(&mut_printf);
 			pthread_exit(NULL);
 		}
+		REC_BYTES_CHECK(rec_bytes,sizeof(socket_role),"****** E R R O R: timeout in connecting to s server ******\n");
 		rio_readinitb(&rio,connfd_rec);
 	}
 
@@ -284,7 +301,9 @@ void * connecting_s_server_thread(void * vargp){
 			p_pt->w = ready_f_s_pt->w;
 
 			//XXX: this is the only position that uses rio_readnb
-			rio_readnb(&rio,(char *)p_pt,sizeof(posture));
+			rec_bytes = rio_readnb(&rio,(char *)p_pt,sizeof(posture));
+			REC_BYTES_CHECK(rec_bytes,sizeof(socket_role),"****** E R R O R: timeout in connecting to s server ******\n");
+			
 			pthread_mutex_lock(&mut_printf);
 			printf("[CONNECTING_S_SERVER_THREAD] receive: %d %d %d\n",p_pt->x,p_pt->y,p_pt->z);
 			pthread_mutex_unlock(&mut_printf);
@@ -340,13 +359,31 @@ void * client_thread(void * vargp){
 	int32_t net_roll_op;
 	int32_t net_dir_op;
 	int32_t net_acc_op;
-	uint32_t net_lw_op;
+	char net_lw_op[STR_LEN];
 	int32_t net_destroyed_flighter_n;
+	int32_t net_destroyed_weapon_n;
 	uint32_t net_destroyed_flighter_id;
 	uint32_t timestamp;
 	
-	char * init_status = "1\n1 1 1 1 1 1 1 1 1 1 1 1 1 1 1\n";
-	//
+	net_flighter_op net_f_o;
+	net_destroyed_flighter net_d_f;
+	net_destroyed_weapon net_d_w;
+	// TODO: appropriate init_status needed
+	net_match_status init_status;
+	net_flighter_status net_f_s1,net_f_s2;
+	init_status.timestamp = 1;
+	init_status.steplength = 1;
+	init_status.flighters_n = 2;
+	init_status.weapons_n = 0;
+	init_status.winner_group = 0;
+	sprintf(net_f_s1.user_id,"1");
+	sprintf(net_f_s2.user_id,"0");
+	net_f_s1.x = net_f_s1.y = net_f_s1.z = 1;
+	net_f_s2.x = net_f_s2.y = net_f_s2.z = -1;
+
+	//char * init_status = "1 1\n2\n1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1\n0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1\n0\n";
+	//char * init_status = "1 1\n1\n1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1\n0\n";
+
 	pthread_mutex_t * mut_room_pt;
 	pthread_cond_t * cond_room_pt;
 	pthread_mutex_t * mut_clients_pt;
@@ -361,12 +398,16 @@ void * client_thread(void * vargp){
 	rio_readinitb(&rio,connfd);
 	
 	// first time connection client tells this server its id
-	if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
-		client_id = (uint32_t)atoi(buf);
-	}
-	buf[MAXLINE-1] = 0;
+	n = rio_readnb(&rio,&net_f_o,sizeof(net_flighter_op));
+	REC_BYTES_CHECK(n,sizeof(net_flighter_op),"****** E R R O R: timeout in first-time connecting to client ******\n");
+	
+	client_id = atoi(net_f_o.user_id);
+	
+	memset(buf,0,MAXLINE);
 	//printf("[CLIENT_THREAD id %d] first time message: %s[END]\n",c_i_pt->id,buf);
-	rio_writen(connfd,init_status,strlen(init_status));
+	rio_writen(connfd,(char *)&init_status,sizeof(net_match_status));
+	rio_writen(connfd,(char *)&net_f_s1,sizeof(net_flighter_status));
+	rio_writen(connfd,(char *)&net_f_s2,sizeof(net_flighter_status));
 
 	// not 0 means room_thread is not ready yet
 	while(ccr_rw_map_query(&cmap_cid2cinfo,client_id,&v) != 0);
@@ -395,8 +436,10 @@ void * client_thread(void * vargp){
 
 	while(1){
 		if(client_clock == *room_clock_pt){
-			//printf("[CLIENT_THREAD id %d] ready to read from client\n",c_i_pt->id);
-			if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
+			printf("[CLIENT_THREAD id %d] ready to read op from client\n",c_i_pt->id);
+			n = rio_readnb(&rio,&net_f_o,sizeof(net_flighter_op));
+			REC_BYTES_CHECK(n,sizeof(net_flighter_op),"****** E R R O R: timeout in reading op from client ******\n");
+			if(n != 0){
 				// operation
 				pthread_mutex_lock(&mut_printf);
 				printf("[CLIENT_THREAD id %d]content read in op of clock %d:%s[END]\n",c_i_pt->id,client_clock,buf);
@@ -405,45 +448,40 @@ void * client_thread(void * vargp){
 				buf_pt = buf;
 
 				f_o_pt->tic = client_clock;
-				client_id = (uint32_t)atoi(buf_pt);
-				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
-				timestamp = (uint32_t)atoi(buf_pt);
-				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
-				net_pitch_op = (int32_t)atoi(buf_pt);
-				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
-				net_roll_op = (int32_t)atoi(buf_pt);
-				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
-				net_dir_op = (int32_t)atoi(buf_pt);
-				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
-				net_acc_op = (int32_t)atoi(buf_pt);
-				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
-				net_lw_op = (uint32_t)atoi(buf_pt);
+				//client_id = atoi(net_f_o.user_id);
+				timestamp = net_f_o.timestamp;
+				net_pitch_op = net_f_o.op_pitch;
+				net_roll_op = net_f_o.op_roll;
+				net_dir_op = net_f_o.op_dir;
+				net_acc_op = net_f_o.op_acc;
+				strncpy(net_lw_op,net_f_o.launch_weapon,STR_LEN);
+				net_destroyed_flighter_n = net_f_o.detected_destroyed_flighters;
+				net_destroyed_weapon_n = net_f_o.detected_destroyed_weapons;
 
 				pthread_mutex_lock(&mut_printf);
 				printf("[CLIENT_THREAD id %d]client thread has processed op %d %d %d %d %d\n",c_i_pt->id,net_pitch_op,net_roll_op,net_dir_op,net_acc_op,net_lw_op);
 				pthread_mutex_unlock(&mut_printf);
 
 
-				// detected destroyed flights
-				if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
-					buf_pt = buf;
-					net_destroyed_flighter_n = (int32_t)atoi(buf_pt);
+				// destroyed flighters
+				for(i = 0; i < net_destroyed_flighter_n;i++){
+					n = rio_readnb(&rio,&net_d_f,sizeof(net_destroyed_flighter));					
+					REC_BYTES_CHECK(n,sizeof(net_destroyed_flighter),"****** E R R O R: timeout in reading detected destroyed flighter from client ******\n");
+					net_destroyed_flighter_id = (uint32_t)atoi(net_d_f.id);
+					ccr_rw_map_query(cmap_fid2desct_pt,net_destroyed_flighter_id,&v);
+					ccr_rw_map_insert(cmap_fid2desct_pt,net_destroyed_flighter_id,v+1);
 					pthread_mutex_lock(&mut_printf);
-					printf("[CLIENT_THREAD id %d] buf content line 2:%s\n",c_i_pt->id,buf);
+					printf("[CLIENT_THREAD id %d] flighter %d detected to be destroyed; cmap new v: %d\n",c_i_pt->id,net_destroyed_flighter_id,v+1);
 					pthread_mutex_unlock(&mut_printf);
-					for(i = 0; i < net_destroyed_flighter_n;i++){
-						buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
-						net_destroyed_flighter_id = (uint32_t)atoi(buf_pt);
-						ccr_rw_map_query(cmap_fid2desct_pt,net_destroyed_flighter_id,&v);
-						ccr_rw_map_insert(cmap_fid2desct_pt,net_destroyed_flighter_id,v+1);
-						pthread_mutex_lock(&mut_printf);
-						printf("[CLIENT_THREAD id %d] flighter %d detected to be destroyed; cmap new v: %d\n",c_i_pt->id,net_destroyed_flighter_id,v+1);
-						pthread_mutex_unlock(&mut_printf);
-					}
 				}
-				else{
-					//TODO: net problem
+				// destroyed weapons
+				for(i = 0; i < net_destroyed_weapon_n;i++){
+					n = rio_readnb(&rio,&net_d_w,sizeof(net_destroyed_weapon));					
+					REC_BYTES_CHECK(n,sizeof(net_destroyed_weapon),"****** E R R O R: timeout in reading detected destroyed weapon from client ******\n");
+					//TODO: deal with net_destroyed_weapon
+				
 				}
+				n = rio_readlineb(&rio,buf,MAXLINE);
 			}
 			else{
 				//TODO: net problem
@@ -506,7 +544,8 @@ void * client_thread(void * vargp){
 			// TODO: send overall state of every flighter back to clients
 			rio_writen(connfd,c_i_pt->overall_status,strlen(c_i_pt->overall_status));
 			// TODO: end of game
-			if(c_i_pt->overall_status[0] == 'E'){				
+
+			if(((net_match_status *)c_i_pt->overall_status)->winner_group != 0){				
 				break;
 			}
 		}
@@ -588,7 +627,7 @@ void * room_thread(void * vargp){
 	int size;
 	int alive_group_id;
 	int game_should_end;
-
+	
 	// for practisse mode only
 	posture * posture_pt;
 	// all target_flighter id 0
@@ -598,7 +637,13 @@ void * room_thread(void * vargp){
 	// for query only
 	int k;
 	uint64_t v;
-	
+
+	net_match_status net_m_s;
+	net_flighter_status net_f_s;
+	net_weapon_load net_w_l;
+	net_weapon_status net_w_s;	
+	int cursor;
+
 	// mutex and cond for clients to wake up this room:
 	// i.e. to info this room that one of the clients has been ready
 	pthread_mutex_t mut_room;
@@ -777,30 +822,31 @@ void * room_thread(void * vargp){
 		// and when tf_thread finishes working
 		// it sets tf_ready_siganl to 1
 		if(r_i_pt->match_type == 0){
-			pthread_mutex_lock(&mut_tf);
-			while(ready_posture_pt != NULL){
-				pthread_cond_wait(&cond_tf,&mut_tf);
-			}
-			pthread_mutex_lock(&mut_printf);
-			printf("[ROOM_THREAAD id %d] asking target flighter server to work\n",r_i_pt->room_id);
-			pthread_mutex_unlock(&mut_printf);
+			if(TARGET_FLIGHTER_WORK){
+				pthread_mutex_lock(&mut_tf);
+				while(ready_posture_pt != NULL){
+					pthread_cond_wait(&cond_tf,&mut_tf);
+				}
+				pthread_mutex_lock(&mut_printf);
+				printf("[ROOM_THREAAD id %d] asking target flighter server to work\n",r_i_pt->room_id);
+				pthread_mutex_unlock(&mut_printf);
 
-			ready_posture_pt = posture_pt;
-			pthread_cond_broadcast(&cond_tf);
-			pthread_mutex_unlock(&mut_tf);
-			// waits for tf_thread to complete
-			while(ready_posture_pt != NULL){
-				continue;
+				ready_posture_pt = posture_pt;
+				pthread_cond_broadcast(&cond_tf);
+				pthread_mutex_unlock(&mut_tf);
+				// waits for tf_thread to complete
+				while(ready_posture_pt != NULL){
+					continue;
+				}
+				pthread_mutex_lock(&mut_printf);
+				printf("[ROOM_THREAAD id %d] target flighter server work completed\n",r_i_pt->room_id);
+				pthread_mutex_unlock(&mut_printf);
 			}
-			pthread_mutex_lock(&mut_printf);
-			printf("[ROOM_THREAAD id %d] target flighter server work completed\n",r_i_pt->room_id);
-			pthread_mutex_unlock(&mut_printf);
-
 
 		}
 
 		// TODO: deal with target_flighter getting destroyed
-		buf[0] = '\0';
+		memset(buf,MAXLINE,0);
 		// 1. decide which flighters really are destroyed
 		for(i = 0; i < r_i_pt->size; i++){
 			ccr_rw_map_query(&cmap_fid2desct,(*(r_i_pt->clients+i)).fos->s.flighter_id,&v);
@@ -844,15 +890,19 @@ void * room_thread(void * vargp){
 		}
 
 		if(game_should_end == 1){
-			sprintf(buf,"END\n%d\n",alive_group_id);
+			net_m_s.timestamp = -1;
+			net_m_s.steplength = 0;
+			net_m_s.flighters_n = 0;
+			net_m_s.weapons_n = 0;
+			net_m_s.winner_group = alive_group_id;
+			strncpy(buf,(char *)&net_m_s,sizeof(net_match_status));	
 			for(i = 0; i < r_i_pt->size; i++){
 				(r_i_pt->clients+i)->overall_status = buf;
 			}
 					
 			pthread_mutex_lock(&mut_printf);
-			printf("[ROOM_THREAAD id %d] room status of clock %d:\n%s\n",r_i_pt->room_id,room_clock,buf);
+			printf("[ROOM_THREAAD id %d] room status of clock %d:\n #### Group %d has won! Game over ####\n",r_i_pt->room_id,room_clock,alive_group_id);
 			pthread_mutex_unlock(&mut_printf);
-
 
 			// when room_clock moves on notify all clients to move on
 			pthread_mutex_lock(&mut_clients);
@@ -867,25 +917,42 @@ void * room_thread(void * vargp){
 			}
 			pthread_exit(NULL);
 		}
-
-		sprintf(buf,"%d %d\n%d\n",room_clock,r_i_pt->simulation_steplength,(r_i_pt->match_type == 0?r_i_pt->size+1:r_i_pt->size));
+		cursor = 0;
+		net_m_s.timestamp = room_clock;
+		net_m_s.steplength = r_i_pt->simulation_steplength;
+		net_m_s.flighters_n = (r_i_pt->match_type == 0?r_i_pt->size+1:r_i_pt->size);
+		// TODO: weapons_n should be really dealt with!
+		net_m_s.weapons_n = 0;
+		net_m_s.winner_group = 0;
+		memcpy(buf,(char *)&net_m_s,sizeof(net_match_status));
+		cursor = sizeof(net_match_status);	
+		// TODO: loaded_weapon_types
 		for(i = 0; i < r_i_pt->size; i++){
 			f_s_pt = &((*(r_i_pt->clients+i)).fos->s);
-			sprintf(temp_buf,"%u %d %d %d %d %d %d %d %d %d %d %d %d 2 1 1 2 1\n",f_s_pt->user_id,
-				f_s_pt->x,f_s_pt->y,f_s_pt->z,f_s_pt->u,f_s_pt->v,f_s_pt->w,f_s_pt->vx,f_s_pt->vy,f_s_pt->vz,
-				f_s_pt->vu,f_s_pt->vv,f_s_pt->vw);
-			strcat(buf,temp_buf);
+			sprintf(net_f_s.user_id,"%d",net_f_s.user_id);
+			memcpy((char *)&(net_f_s.x),(char *)&(f_s_pt->x),sizeof(int32_t)*12);
+			net_f_s.loaded_weapon_types = 0;		
+			
+			memcpy(buf+cursor,(char *)&net_f_s,sizeof(net_flighter_status));
+			cursor += sizeof(net_flighter_status);
 		}
 		// practise mode: add target_flighter
 		if(r_i_pt->match_type == 0){
-			sprintf(temp_buf,"%u %d %d %d %d %d %d %d %d %d %d %d %d 2 1 1 2 1\n",tf_id,
-				posture_pt->x,posture_pt->y,posture_pt->z,posture_pt->u,posture_pt->v,posture_pt->w,posture_pt->vx,posture_pt->vy,posture_pt->vz,
-				posture_pt->vu,posture_pt->vv,posture_pt->vw);
-			strcat(buf,temp_buf);
+			sprintf(net_f_s.user_id,"%d",tf_id);
+			memcpy((char *)&(net_f_s.x),(char *)&(posture_pt->x),sizeof(int32_t)*12);
+			net_f_s.loaded_weapon_types = 0;
+		
+			memcpy(buf+cursor,(char *)&net_f_s,sizeof(net_flighter_status));
+			cursor += sizeof(net_flighter_status);
+
 		}
 
-		// weapon status
-		strcat(buf,"0\n");
+		// TODO: weapon status
+		for(i = 0; i < net_m_s.weapons_n;i++){
+
+		}
+
+
 		for(i = 0; i < r_i_pt->size; i++){
 			(r_i_pt->clients+i)->overall_status = buf;
 		}

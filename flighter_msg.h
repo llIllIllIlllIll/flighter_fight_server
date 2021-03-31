@@ -8,6 +8,8 @@
 #define _FLIGHTER_H
 #define ROLE_SEND 0
 #define ROLE_RECV 1
+
+#define STR_LEN 64
 // flight operation: sent by clients to this server
 // launch_weapon: 0 no 1 launch a missile 2 shoot a bullet 3 both
 typedef struct _flighter_op{
@@ -48,6 +50,73 @@ typedef struct _destroyed_flighter_ids{
 	uint32_t * flighter_ids;
 	uint32_t size;
 } destroyed_flighter_ids;
+// net struct: communication with client
+// all string are forced to be 64 bytes
+// the following 3 are the operation of flighter
+typedef struct _net_flighter_op{
+	char user_id[STR_LEN];
+	int32_t timestamp;
+	int32_t op_pitch;
+	int32_t op_roll;
+	int32_t op_dir;
+	int32_t op_acc;
+	char launch_weapon[STR_LEN];
+	uint32_t detected_destroyed_flighters;
+	uint32_t detected_destroyed_weapons;
+	
+} net_flighter_op;
+typedef struct _net_destroyed_flighter{
+	char id[STR_LEN];
+} net_destroyed_flighter;
+typedef struct _net_destroyed_weapon{
+	char id[STR_LEN];
+} net_destroyed_weapon;
+// following: match status 
+typedef struct _net_match_status{
+	int32_t timestamp;
+	uint32_t steplength;
+	uint32_t flighters_n;
+	uint32_t weapons_n;
+	uint32_t winner_group;
+} net_match_status;
+typedef struct _net_flighter_status{
+	char user_id[STR_LEN];
+	int32_t x;
+	int32_t y;
+	int32_t z;
+	int32_t u;
+	int32_t v;
+	int32_t w;
+	int32_t vx;
+	int32_t vy;
+	int32_t vz;
+	int32_t vu;
+	int32_t vv;
+	int32_t vw;
+	uint32_t loaded_weapon_types;
+} net_flighter_status;
+typedef struct _net_weapon_load{
+	char type[STR_LEN];
+	uint32_t n;
+} net_weapon_load;
+typedef struct _net_weapon_status{
+	char weapon_id[STR_LEN];
+	char user_id[STR_LEN];
+	char weapon_type[STR_LEN];
+	uint32_t alive_time_left;
+	int32_t x;
+	int32_t y;
+	int32_t z;
+	int32_t u;
+	int32_t v;
+	int32_t w;
+	int32_t vx;
+	int32_t vy;
+	int32_t vz;
+} net_weapon_status;
+
+
+
 
 // tic for syncronization both status
 
