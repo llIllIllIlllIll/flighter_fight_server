@@ -11,6 +11,7 @@
 // This macro is used to check return value of rio_readnb and rio_readlineb
 // and when dealing with rio_readlineb n should be set to 0
 #define REC_BYTES_CHECK(A,B,msg) if((A)<(B)){pthread_mutex_lock(&mut_printf);fprintf(stderr,msg);pthread_mutex_unlock(&mut_printf);pthread_exit(NULL);}
+#define ROOM_MAX_WAITING_MSEC (10*1000)
 // A BRIEF INTRODUCTION TO THIS SERVER:
 // 1. a main thread listens for room server to send room info
 // 2. a secondary main thread listens for clients
@@ -467,6 +468,10 @@ void * client_thread(void * vargp){
 
 	// get some info from c_i_pt into local variables
 	f_s_pt = &(c_i_pt->fos->s);
+	
+	// XXX
+	f_s_pt->tic = 0;
+	
 	f_o_pt = &(c_i_pt->fos->op);
 	cct_sync_clients_pt = c_i_pt->cct_sync_clients;
 	client_clock = 0;
@@ -485,6 +490,7 @@ void * client_thread(void * vargp){
 		if(client_clock == *room_clock_pt){
 			printf("[CLIENT_THREAD id %d] ready to read op from client\n",c_i_pt->id);
 			n = rio_readnb(&rio,&net_f_o,sizeof(net_flighter_op));
+			printf("res : %d\n",n);
 			REC_BYTES_CHECK(n,sizeof(net_flighter_op),"****** E R R O R: timeout in reading op from client ******\n");
 			if(n != 0){
 				// operation
@@ -589,7 +595,7 @@ void * client_thread(void * vargp){
 			pthread_mutex_unlock(&mut_printf);
 
 			// TODO: send overall state of every flighter back to clients
-			rio_writen(connfd,c_i_pt->overall_status,strlen(c_i_pt->overall_status));
+			rio_writen(connfd,c_i_pt->overall_status,sizeof(net_match_status)+2*sizeof(net_flighter_status));
 			// TODO: end of game
 
 			if(((net_match_status *)c_i_pt->overall_status)->winner_group != 0){				
@@ -684,6 +690,11 @@ void * room_thread(void * vargp){
 	// for query only
 	int k;
 	uint64_t v;
+	// time related
+	struct timeval tv;
+	struct timespec ts;
+	long long start,current;
+	int room_restart;	
 
 	net_match_status net_m_s;
 	net_flighter_status net_f_s;
@@ -753,6 +764,8 @@ void * room_thread(void * vargp){
 
 	// init room_clock
 	room_clock = 0;
+	room_restart = 0;
+
 	// read room info from room server
 	// just basic configurations
 	if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
@@ -857,14 +870,35 @@ void * room_thread(void * vargp){
 	// 	 use a ccr_counter to let room_thread know when all client_thread s are ready
 	
 	while(1){
+		
+		gettimeofday(&tv,NULL);
+		start = TV_TO_MSEC(tv);
 		k = -1;
 		pthread_mutex_lock(&mut_room);
 		while(k != r_i_pt->size){
-			pthread_cond_wait(&cond_room,&mut_room);
+			gettimeofday(&tv,NULL);
+			current = TV_TO_MSEC(tv);
+			if(current - start > ROOM_MAX_WAITING_MSEC){
+				room_restart = 1;
+				break;
+			}	
+
+			ts.tv_sec = tv.tv_sec+1;
+			ts.tv_nsec = tv.tv_usec*1000;
+			pthread_cond_timedwait(&cond_room,&mut_room,&ts);
 			ccr_ct_query(&cct_sync_clients,&k);
 		}
 		pthread_mutex_unlock(&mut_room);
-		
+	
+		if(room_restart == 1){
+			room_clock = 0;
+			pthread_mutex_lock(&mut_printf);
+			printf("[ROOM_THREAAD id %d] room waiting clients timeout; restart room process\n",r_i_pt->room_id);
+			pthread_mutex_unlock(&mut_printf);
+			room_restart = 0;
+			continue;		
+		}		
+
 		pthread_mutex_lock(&mut_printf);
 		printf("[ROOM_THREAAD id %d] room sync accomplished clock %d\n",r_i_pt->room_id,room_clock);
 		pthread_mutex_unlock(&mut_printf);

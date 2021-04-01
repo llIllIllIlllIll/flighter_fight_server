@@ -19,7 +19,7 @@
 # define RIO_BUFSIZE 8192
 # define LISTENQ 1024
 # define LLL 60
-# define MAX_WAITING_MSEC 1000
+# define MAX_WAITING_MSEC (5*1000)
 typedef struct sockaddr SA;
 typedef struct {
     int rio_fd;
