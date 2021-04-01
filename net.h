@@ -48,12 +48,19 @@ ssize_t rio_writen(int fd,void *usrbuf,size_t n){
     }
     return n;
 }
+// rio_read return val explanation:
+// -1: EAGAIN or such error
+// 0: EOF
+// positive: normal situation
 static ssize_t rio_read (rio_t *rp , char *usrbuf , size_t n) 
 { 
     int cnt;
     while(rp->rio_cnt <= 0){
         rp->rio_cnt = read(rp->rio_fd,rp->rio_buf,sizeof(rp->rio_buf));
-        if(rp->rio_cnt < 0){
+        //printf("rio_read read res: %d\n",rp->rio_cnt);
+	if(rp->rio_cnt < 0){
+	    // nonblock if no content
+	    // return EAGAIN
             if(errno != EINTR)
                 return -1;
         }
@@ -88,7 +95,7 @@ ssize_t rio_readlineb(rio_t *rp,void *usrbuf,size_t maxlen){
                 break;
             }
         }
-        else if(rc == 0){
+        else if(rc <= 0){
 	    gettimeofday(&tv,NULL);
     	    current = (long long)TV_TO_MSEC(tv);
 	    if(current - start < MAX_WAITING_MSEC){
@@ -100,10 +107,7 @@ ssize_t rio_readlineb(rio_t *rp,void *usrbuf,size_t maxlen){
 		return -2;
 	    }
         }
-        else
-        {
-            return -1;
-        }
+        
     }
     *bufp = 0;
     return n-1;
@@ -117,15 +121,15 @@ ssize_t rio_readnb(rio_t *rp, void *usrbuf, size_t n){
     gettimeofday(&tv,NULL);
     start = TV_TO_MSEC(tv);
     while(nleft > 0){
-        if((nread = rio_read(rp,bufp,nleft))<0)
-            return -1;
-        else if(nread == 0){
+        if((nread = rio_read(rp,bufp,nleft))<=0){
 	    gettimeofday(&tv,NULL);
 	    current = TV_TO_MSEC(tv);
 	    if(current - start < MAX_WAITING_MSEC){
-	    	continue;
+	    	//printf("%d \n",current-start);
+		continue;
 	    }
 	    else{
+		//printf("%d \n",current-start);
 	    	break;
 	    }
 	}

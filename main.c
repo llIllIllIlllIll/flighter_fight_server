@@ -10,7 +10,7 @@
 #define TARGET_FLIGHTER_WORK 0
 // This macro is used to check return value of rio_readnb and rio_readlineb
 // and when dealing with rio_readlineb n should be set to 0
-#define REC_BYTES_CHECK(rec_bytes,n,msg); if((rec_bytes)<(n)){pthread_mutex_lock(&mut_printf);fprintf(stderr,msg);pthread_mutex_unlock(&mut_printf);}
+#define REC_BYTES_CHECK(A,B,msg) if((A)<(B)){pthread_mutex_lock(&mut_printf);fprintf(stderr,msg);pthread_mutex_unlock(&mut_printf);pthread_exit(NULL);}
 // A BRIEF INTRODUCTION TO THIS SERVER:
 // 1. a main thread listens for room server to send room info
 // 2. a secondary main thread listens for clients
@@ -78,12 +78,17 @@ void * controller_thread(void * vargp){
 	char * buf_pt;
 	uint64_t v;
 	room_info * r_i_pt;
+	int flags;
 
 	connfd = -1;
 
 	while(connfd < 0){
 		clientlen = sizeof(struct sockaddr_storage);
 		connfd = accept(director_listenfd,(SA *)&clientaddr,&clientlen);
+		// set fd to be nonblock
+		flags = fcntl(connfd,F_GETFL,0);
+		fcntl(connfd,F_SETFL,flags | O_NONBLOCK);
+
 		rio_readinitb(&rio,connfd);
 		
 		pthread_mutex_lock(&mut_printf);
@@ -145,6 +150,7 @@ void * connecting_target_flighter_thread(void * vargp){
 	posture * tf_posture;
 	socket_role * role;
 	int rec_bytes;
+	int flags;
 
 	clientlen = sizeof(struct sockaddr_storage);
 
@@ -154,6 +160,10 @@ void * connecting_target_flighter_thread(void * vargp){
 	pthread_detach(pthread_self());
 
 	connfd = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
+	
+	// set fd to be nonblock
+	flags = fcntl(connfd,F_GETFL,0);
+	fcntl(connfd,F_SETFL,flags | O_NONBLOCK);
 
 	rio_readinitb(&rio,connfd);
 	rec_bytes = rio_readnb(&rio,role,sizeof(socket_role));
@@ -162,6 +172,11 @@ void * connecting_target_flighter_thread(void * vargp){
 	if(role->type == ROLE_SEND){
 		connfd_sen = connfd;
 		connfd = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
+		
+		// set fd to be nonblock
+		flags = fcntl(connfd,F_GETFL,0);
+		fcntl(connfd,F_SETFL,flags | O_NONBLOCK);
+	
 		connfd_rec = connfd;
 		rio_readinitb(&rio,connfd_rec);
 		rec_bytes = rio_readnb(&rio,role,sizeof(socket_role));
@@ -169,6 +184,12 @@ void * connecting_target_flighter_thread(void * vargp){
 	else if(role->type == ROLE_RECV){
 		connfd_rec = connfd;
 		connfd_sen = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
+		
+		// set fd to be nonblock
+		flags = fcntl(connfd_sen,F_GETFL,0);
+		fcntl(connfd_sen,F_SETFL,flags | O_NONBLOCK);
+
+
 		rio_readinitb(&rio,connfd_sen);
 		rec_bytes = rio_readnb(&rio,role,sizeof(socket_role));
 	}
@@ -228,6 +249,7 @@ void * connecting_s_server_thread(void * vargp){
 	flighter_op * ready_f_o_pt;
 	int n;
 	int rec_bytes;
+	int flags;
 
 	pthread_detach(pthread_self());
 	socklen_t clientlen;
@@ -243,12 +265,22 @@ void * connecting_s_server_thread(void * vargp){
 
 	if(S_SERVER_WORK){
 		connfd = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
+		
+		// set fd to be nonblock
+		flags = fcntl(connfd,F_GETFL,0);
+		fcntl(connfd,F_SETFL,flags | O_NONBLOCK);
+
 		rio_readinitb(&rio,connfd);
 		rec_bytes = rio_readnb(&rio,role,sizeof(socket_role));
 		REC_BYTES_CHECK(rec_bytes,sizeof(socket_role),"****** E R R O R: timeout in connecting to s server ******\n");
 		if(role->type == ROLE_SEND){
 			connfd_sen = connfd;
 			connfd = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
+			
+			// set fd to be nonblock
+			flags = fcntl(connfd,F_GETFL,0);
+			fcntl(connfd,F_SETFL,flags | O_NONBLOCK);
+
 			connfd_rec = connfd;
 			rio_readinitb(&rio,connfd_rec);
 			rec_bytes = rio_readnb(&rio,role,sizeof(socket_role));
@@ -256,6 +288,12 @@ void * connecting_s_server_thread(void * vargp){
 		else if(role->type == ROLE_RECV){
 			connfd_rec = connfd;
 			connfd_sen = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
+	
+			// set fd to be nonblock
+			flags = fcntl(connfd_sen,F_GETFL,0);
+			fcntl(connfd,F_SETFL,flags | O_NONBLOCK);
+
+
 			rio_readinitb(&rio,connfd_sen);
 		 	rec_bytes = rio_readnb(&rio,role,sizeof(socket_role));
 		}
@@ -308,7 +346,7 @@ void * connecting_s_server_thread(void * vargp){
 			printf("[CONNECTING_S_SERVER_THREAD] receive: %d %d %d\n",p_pt->x,p_pt->y,p_pt->z);
 			pthread_mutex_unlock(&mut_printf);
 
-			rio_writen(connfd,(char *)p_pt,sizeof(posture));
+			rio_writen(connfd_sen,(char *)p_pt,sizeof(posture));
 			pthread_mutex_lock(&mut_printf);
 			printf("[CONNECTING_S_SERVER_THREAD] send: %d %d %d\n",p_pt->x,p_pt->y,p_pt->z);
 			pthread_mutex_unlock(&mut_printf);
@@ -365,6 +403,8 @@ void * client_thread(void * vargp){
 	uint32_t net_destroyed_flighter_id;
 	uint32_t timestamp;
 	
+	int flags;	
+
 	net_flighter_op net_f_o;
 	net_destroyed_flighter net_d_f;
 	net_destroyed_weapon net_d_w;
@@ -395,10 +435,17 @@ void * client_thread(void * vargp){
 	
 	clientlen = sizeof(struct sockaddr_storage);
 	connfd = sbuf_remove(&sbuf_for_clients);
+	
+	// set fd to be nonblock
+	flags = fcntl(connfd,F_GETFL,0);
+	fcntl(connfd,F_SETFL,flags | O_NONBLOCK);
+
 	rio_readinitb(&rio,connfd);
 	
 	// first time connection client tells this server its id
 	n = rio_readnb(&rio,&net_f_o,sizeof(net_flighter_op));
+	// printf("******* return val: %d *************\n",n);
+
 	REC_BYTES_CHECK(n,sizeof(net_flighter_op),"****** E R R O R: timeout in first-time connecting to client ******\n");
 	
 	client_id = atoi(net_f_o.user_id);
@@ -643,7 +690,7 @@ void * room_thread(void * vargp){
 	net_weapon_load net_w_l;
 	net_weapon_status net_w_s;	
 	int cursor;
-
+	int flags;
 	// mutex and cond for clients to wake up this room:
 	// i.e. to info this room that one of the clients has been ready
 	pthread_mutex_t mut_room;
@@ -679,6 +726,10 @@ void * room_thread(void * vargp){
 	clientlen = sizeof(struct sockaddr_storage);
 	connfd = sbuf_remove(&sbuf_for_room_server);
 	rio_readinitb(&rio,connfd);
+	
+	// set fd to be nonblock
+	flags = fcntl(connfd,F_GETFL,0);
+	fcntl(connfd,F_SETFL,flags | O_NONBLOCK);
 
 	pthread_mutex_lock(&mut_printf);
 	printf("[ROOM_THREAAD] room connected\n");

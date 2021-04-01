@@ -37,6 +37,7 @@ void * fake_client_thread(void * vargs){
 	rio_readinitb(&rio,clientfd);
 	
 	sprintf(buf,"%d\n",local_clientid);
+	//sleep(100);
 	rio_writen(clientfd,buf,strlen(buf));
 	rio_readlineb(&rio,buf,MAXLINE);
 	rio_readlineb(&rio,buf,MAXLINE);
