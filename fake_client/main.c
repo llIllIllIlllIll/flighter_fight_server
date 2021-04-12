@@ -41,14 +41,14 @@ void * fake_client_thread(void * vargs){
 	rio_readinitb(&rio,clientfd);
 	
 	memset(buf,0,MAXLINE);
-	sprintf(buf,"%d\n",local_clientid);
-	strncpy(net_f_o.user_id,buf,strlen(buf));
+	net_f_o.user_id = local_clientid;
 	//sleep(100);
 	rio_writen(clientfd,&net_f_o,sizeof(net_flighter_op));
 	rio_readnb(&rio,&net_m_s,sizeof(net_match_status));
 	rio_readnb(&rio,&net_f_s,sizeof(net_flighter_status));
+	printf("flighter status: %d %d %d\n",net_f_s.x,net_f_s.y,net_f_s.z);
 	rio_readnb(&rio,&net_f_s,sizeof(net_flighter_status));
-
+	printf("flighter status: %d %d %d\n",net_f_s.x,net_f_s.y,net_f_s.z);
 	pthread_mutex_lock(&mut_printf);
 	printf("client %d ready to begin official game process\n",local_clientid);
 	pthread_mutex_unlock(&mut_printf);
@@ -99,9 +99,11 @@ void * fake_client_thread(void * vargs){
 				n = rio_readlineb(&rio,buf,MAXLINE);
 			}*/
 			rio_readnb(&rio,&net_m_s,sizeof(net_match_status));
+			
 			rio_readnb(&rio,&net_f_s,sizeof(net_flighter_status));
+			printf("flighter status: %d %d %d\n",net_f_s.x,net_f_s.y,net_f_s.z);
 			rio_readnb(&rio,&net_f_s,sizeof(net_flighter_status));
-
+			printf("flighter status: %d %d %d\n",net_f_s.x,net_f_s.y,net_f_s.z);
 			
 			//pthread_mutex_unlock(&mut_printf);
 		}

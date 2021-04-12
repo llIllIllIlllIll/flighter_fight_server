@@ -54,33 +54,34 @@ typedef struct _destroyed_flighter_ids{
 // all string are forced to be 64 bytes
 // the following 3 are the operation of flighter
 typedef struct _net_flighter_op{
-	char user_id[STR_LEN];
+	int32_t user_id;
 	int32_t timestamp;
 	int32_t op_pitch;
 	int32_t op_roll;
 	int32_t op_dir;
 	int32_t op_acc;
-	char launch_weapon[STR_LEN];
-	uint32_t detected_destroyed_flighters;
-	uint32_t detected_destroyed_weapons;
-	
+	int32_t launch_weapon;
+	int32_t detected_destroyed_flighters;
+	int32_t detected_destroyed_weapons;
+
 } net_flighter_op;
 typedef struct _net_destroyed_flighter{
-	char id[STR_LEN];
+	int32_t id;
+	int32_t killer_id;
 } net_destroyed_flighter;
 typedef struct _net_destroyed_weapon{
-	char id[STR_LEN];
+	int32_t id;
 } net_destroyed_weapon;
 // following: match status 
 typedef struct _net_match_status{
 	int32_t timestamp;
-	uint32_t steplength;
-	uint32_t flighters_n;
-	uint32_t weapons_n;
-	uint32_t winner_group;
+	int32_t steplength;
+	int32_t flighters_n;
+	int32_t weapons_n;
+	int32_t winner_group;
 } net_match_status;
 typedef struct _net_flighter_status{
-	char user_id[STR_LEN];
+	int32_t user_id;
 	int32_t x;
 	int32_t y;
 	int32_t z;
@@ -93,17 +94,17 @@ typedef struct _net_flighter_status{
 	int32_t vu;
 	int32_t vv;
 	int32_t vw;
-	uint32_t loaded_weapon_types;
+	int32_t loaded_weapon_types;
 } net_flighter_status;
 typedef struct _net_weapon_load{
-	char type[STR_LEN];
-	uint32_t n;
+	int32_t type;
+	int32_t n;
 } net_weapon_load;
 typedef struct _net_weapon_status{
-	char weapon_id[STR_LEN];
-	char user_id[STR_LEN];
-	char weapon_type[STR_LEN];
-	uint32_t alive_time_left;
+	int32_t user_id;
+	int32_t weapon_type;
+	int32_t timestamp;
+	int32_t alive_time_left;
 	int32_t x;
 	int32_t y;
 	int32_t z;
