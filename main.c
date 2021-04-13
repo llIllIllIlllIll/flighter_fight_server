@@ -717,6 +717,7 @@ void * room_thread(void * vargp){
 	net_weapon_status net_w_s;	
 	int cursor;
 	int flags;
+	int to_ct;
 	// mutex and cond for clients to wake up this room:
 	// i.e. to info this room that one of the clients has been ready
 	pthread_mutex_t mut_room;
@@ -769,6 +770,8 @@ void * room_thread(void * vargp){
 	//
 	printf("[ROOM_THREAD]parsed all headers\n"); 
 	char * res_content = "HTTP/1.0 200 OK\r\nServer: Flighter Fight Server\r\nContent-length: 2\r\nContent-type: html/text\r\n\r\nOK";
+	
+	to_ct = 0;
 	/*if((n = rio_readlineb(&rio,buf,MAXLINE)) > 0){
 		pthread_mutex_lock(&mut_printf);
 		printf("%s\n",buf);
@@ -895,6 +898,7 @@ void * room_thread(void * vargp){
 			current = TV_TO_MSEC(tv);
 			if(current - start > ROOM_MAX_WAITING_MSEC){
 				room_restart = 1;
+				to_ct++;
 				break;
 			}	
 
@@ -907,13 +911,17 @@ void * room_thread(void * vargp){
 	
 		if(room_restart == 1){
 			room_clock = 0;
-			pthread_mutex_lock(&mut_printf);
-			printf("[ROOM_THREAAD id %d] room waiting clients timeout; restart room process\n",r_i_pt->room_id);
-			pthread_mutex_unlock(&mut_printf);
+			if(to_ct == 1){
+				pthread_mutex_lock(&mut_printf);
+				printf("[ROOM_THREAAD id %d] room waiting clients timeout; restart room process\n",r_i_pt->room_id);
+				pthread_mutex_unlock(&mut_printf);
+				to_ct++;
+			}
 			room_restart = 0;
 			continue;		
 		}		
 
+		to_ct = 0;
 		pthread_mutex_lock(&mut_printf);
 		printf("[ROOM_THREAAD id %d] room sync accomplished clock %d\n",r_i_pt->room_id,room_clock);
 		pthread_mutex_unlock(&mut_printf);
