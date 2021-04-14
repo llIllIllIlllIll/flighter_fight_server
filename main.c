@@ -888,7 +888,8 @@ void * room_thread(void * vargp){
 	// 	 use a ccr_counter to let room_thread know when all client_thread s are ready
 	
 	while(1){
-		
+		//TODO:delete later
+		//sleep(1);	
 		gettimeofday(&tv,NULL);
 		start = TV_TO_MSEC(tv);
 		k = -1;
