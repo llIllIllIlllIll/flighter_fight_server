@@ -26,6 +26,7 @@ void * fake_client_thread(void * vargs){
 	net_flighter_op net_f_o;
 	net_match_status net_m_s;
 	net_flighter_status net_f_s;
+	net_destroyed_flighter net_d_f;
 
 	pthread_mutex_lock(&mut_clientid);
 	local_clientid = glo_clientid++;
@@ -59,8 +60,17 @@ void * fake_client_thread(void * vargs){
 			memset(&net_f_o,0,sizeof(net_flighter_op));
 			//pthread_mutex_lock(&mut_net);	
 			//rio_writen(clientfd,&net_f_o,sizeof(net_flighter_op));
-
-			rio_writen(clientfd,&net_f_o,sizeof(net_flighter_op));
+			
+			if(i == 2*clocks-1){
+				net_f_o.detected_destroyed_flighters = 1;
+				net_d_f.id = 0;
+				rio_writen(clientfd,&net_f_o,sizeof(net_flighter_op));
+				rio_writen(clientfd,&net_d_f,sizeof(net_destroyed_flighter));
+			}
+			else{
+				rio_writen(clientfd,&net_f_o,sizeof(net_flighter_op));
+			}
+			
 			printf("client %d has writen %d bytes to server\n",local_clientid,sizeof(net_flighter_op));
 			//pthread_mutex_unlock(&mut_net);
 		}
@@ -99,7 +109,10 @@ void * fake_client_thread(void * vargs){
 				n = rio_readlineb(&rio,buf,MAXLINE);
 			}*/
 			rio_readnb(&rio,&net_m_s,sizeof(net_match_status));
-			
+			if(net_m_s.timestamp == -1){
+				printf("MATCH END! WINNER GROUP %d\n",net_m_s.winner_group);
+			}			
+
 			rio_readnb(&rio,&net_f_s,sizeof(net_flighter_status));
 			printf("flighter status: %d %d %d\n",net_f_s.x,net_f_s.y,net_f_s.z);
 			rio_readnb(&rio,&net_f_s,sizeof(net_flighter_status));
