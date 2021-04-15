@@ -16,7 +16,7 @@
 #define N_M_SIZE (sizeof(net_match_status))
 #define N_F_SIZE (sizeof(net_flighter_status))
 #define PI 3.1415926
-#define RAND_ANGLE() ((((double)(rand()%180))/180.0)*PI)
+#define RAND_ANGLE() ((((double)(rand()%4))/4.0)*PI)
 // 4MB
 #define MATCH_RECORD_MAX_SIZE (1<<22)
 // A BRIEF INTRODUCTION TO THIS SERVER:
