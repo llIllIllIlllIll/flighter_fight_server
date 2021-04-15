@@ -468,7 +468,7 @@ void * client_thread(void * vargp){
 	//memcpy(buf+N_M_SIZE,&net_f_s1,N_F_SIZE);
 	//memcpy(buf+N_M_SIZE+N_F_SIZE,&net_f_s2,N_F_SIZE);
 	
-	rio_writen(connfd,init_status_buffer,N_M_SIZE+2*N_F_SIZE);
+	//rio_writen(connfd,init_status_buffer,N_M_SIZE+2*N_F_SIZE);
 	//rio_writen(connfd,(char *)&net_f_s1,sizeof(net_flighter_status));
 	//rio_writen(connfd,(char *)&net_f_s2,sizeof(net_flighter_status));
 
@@ -476,6 +476,10 @@ void * client_thread(void * vargp){
 	while(ccr_rw_map_query(&cmap_cid2cinfo,client_id,&v) != 0);
 
 	c_i_pt = (client_info *)v;
+
+	while(c_i_pt->overall_status == NULL);
+	
+	rio_writen(connfd,c_i_pt->overall_status,c_i_pt->os_size);
 
 	pthread_mutex_lock(&mut_printf);
 	printf("[CLIENT_THREAD id %d]client successfully connected\n",c_i_pt->id);
@@ -610,10 +614,10 @@ void * client_thread(void * vargp){
 			pthread_mutex_unlock(&mut_printf);
 
 			// TODO: send overall state of every flighter back to clients
-			rio_writen(connfd,c_i_pt->overall_status,sizeof(net_match_status)+2*sizeof(net_flighter_status));
+			rio_writen(connfd,c_i_pt->overall_status,c_i_pt->os_size);
 			// TODO: end of game
 
-			if(((net_match_status *)c_i_pt->overall_status)->winner_group != 0){				
+			if(((net_match_status *)c_i_pt->overall_status)->timestamp == -1){				
 				break;
 			}
 		}
@@ -807,6 +811,9 @@ void * room_thread(void * vargp){
 		r_i_pt->match_type = (uint32_t)atoi(buf_pt);
 		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 		r_i_pt->size = (uint32_t)atoi(buf_pt);
+		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
+		// match id : for file system 
+		r_i_pt->match_id = (uint32_t)atoi(buf_pt);
 		r_i_pt->clients = (client_info *)malloc(r_i_pt->size*sizeof(client_info));
 		r_i_pt->cmap_fid2desct = &cmap_fid2desct;
 		// fid 0: target flighter 
@@ -868,10 +875,40 @@ void * room_thread(void * vargp){
 			// map client id to room id
 			ccr_rw_map_insert(&cmap_cid2cinfo,(*(r_i_pt->clients+i)).id,(uint64_t)(r_i_pt->clients+i));
 		}
+		
 	}
 	else{
 		// TODO: Network problem
 	}
+	// after configuration for room set init status
+	net_m_s.timestamp = room_clock;
+	net_m_s.steplength = r_i_pt->simulation_steplength;
+	net_m_s.flighters_n = (r_i_pt->match_type == 0?r_i_pt->size+1:r_i_pt->size);
+	// TODO: weapons_n should be really dealt with!
+	net_m_s.weapons_n = 0;
+	net_m_s.winner_group = 0;
+	memcpy(buf,(char *)&net_m_s,sizeof(net_match_status));
+	cursor = sizeof(net_match_status);	
+	// TODO: loaded_weapon_types
+	for(i = 0; i < r_i_pt->size; i++){
+		f_s_pt = &((*(r_i_pt->clients+i)).fos->s);
+		net_f_s.user_id = f_s_pt->user_id;
+		memcpy((char *)&(net_f_s.x),(char *)&(f_s_pt->x),sizeof(int32_t)*12);
+		net_f_s.loaded_weapon_types = 0;		
+		memcpy(buf+cursor,(char *)&net_f_s,sizeof(net_flighter_status));
+		cursor += sizeof(net_flighter_status);
+	}
+	// practise mode: add target_flighter
+	if(r_i_pt->match_type == 0){
+		net_f_s.user_id = tf_id;
+		memcpy((char *)&(net_f_s.x),(char *)&(posture_pt->x),sizeof(int32_t)*12);
+		net_f_s.loaded_weapon_types = 0;
+		memcpy(buf+cursor,(char *)&net_f_s,sizeof(net_flighter_status));
+		cursor += sizeof(net_flighter_status);
+	}
+	// TODO: set start position properly & give it to each client
+
+
 	ccr_rw_map_insert(&cmap_rid2rinfo,r_i_pt->room_id,(uint64_t)r_i_pt);
 
 	rio_writen(connfd,res_content,strlen(res_content));
@@ -1007,6 +1044,7 @@ void * room_thread(void * vargp){
 			strncpy(buf,(char *)&net_m_s,sizeof(net_match_status));	
 			for(i = 0; i < r_i_pt->size; i++){
 				(r_i_pt->clients+i)->overall_status = buf;
+				(r_i_pt->clients+i)->os_size = sizeof(net_match_status);
 			}
 					
 			pthread_mutex_lock(&mut_printf);
@@ -1064,6 +1102,7 @@ void * room_thread(void * vargp){
 
 		for(i = 0; i < r_i_pt->size; i++){
 			(r_i_pt->clients+i)->overall_status = buf;
+			(r_i_pt->clients+i)->os_size = cursor;
 		}
 
 		pthread_mutex_lock(&mut_printf);

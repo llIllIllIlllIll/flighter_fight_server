@@ -206,9 +206,11 @@ typedef struct _client_info{
 	// mutex & cond for room_thread to wake up its client_thread s
 	pthread_mutex_t * mut_clients_pt;
 	pthread_cond_t * cond_clients_pt;
-	
-	// status of all flighters that should be sent back to each client
+
+	// status of all flighters that should be sent to each client
 	char * overall_status;
+	// sizeof overall_status
+	uint32_t os_size;
 	// cmap <flighter_id,number_of_clients_sentence_it_to_death>
 	ccr_rw_map * cmap_fid2desct;
 } client_info;
@@ -223,6 +225,7 @@ typedef struct _client_info{
 // size: number of current clients
 typedef struct _room_info{
 	uint32_t room_id;
+	uint32_t match_id;
 	uint32_t room_size;
 	uint32_t simulation_steplength;
 	uint32_t env_id;
