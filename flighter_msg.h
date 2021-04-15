@@ -13,6 +13,7 @@
 // flight operation: sent by clients to this server
 // launch_weapon: 0 no 1 launch a missile 2 shoot a bullet 3 both
 typedef struct _flighter_op{
+	int32_t user_id;
 	uint32_t tic;
 	// fu yang
 	int32_t pitch;
@@ -41,6 +42,20 @@ typedef struct _posture{
 	int32_t vv;
 	int32_t vw;
 } posture;
+
+typedef struct _operation{
+	int32_t pitch;
+	int32_t roll;
+	int32_t dir;
+	int32_t acc;
+	int32_t launch_weapon;
+} operation;
+// pack only for communication with simulink
+typedef struct _s_server_pack{
+	posture p;
+	operation o;
+} s_server_pack;
+
 typedef struct _socket_role{
 	int32_t id;
 	int32_t type; // 0 send 1 recv 

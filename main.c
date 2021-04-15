@@ -7,8 +7,8 @@
 #include <stdlib.h>
 #include <math.h>
 #define MOVE_AHEAD_IN_BUF(p) (strchr(p,' ')+1)
-#define S_SERVER_WORK 0
-#define TARGET_FLIGHTER_WORK 0
+#define S_SERVER_WORK 1
+#define TARGET_FLIGHTER_WORK 1
 // This macro is used to check return value of rio_readnb and rio_readlineb
 // and when dealing with rio_readlineb n should be set to 0
 #define REC_BYTES_CHECK(A,B,msg) if((A)<(B)){pthread_mutex_lock(&mut_printf);fprintf(stderr,msg);pthread_mutex_unlock(&mut_printf);pthread_exit(NULL);}
@@ -17,6 +17,8 @@
 #define N_F_SIZE (sizeof(net_flighter_status))
 #define PI 3.1415926
 #define RAND_ANGLE() ((((double)(rand()%180))/180.0)*PI)
+// 4MB
+#define MATCH_RECORD_MAX_SIZE (1<<22)
 // A BRIEF INTRODUCTION TO THIS SERVER:
 // 1. a main thread listens for room server to send room info
 // 2. a secondary main thread listens for clients
@@ -52,8 +54,8 @@ pthread_cond_t cond_con;
 // need to be calculated by s_server
 uint32_t ready_client_id;
 
-// ready_posture_pt is used to tell connecting_tf_thread that one of the postures need update
-posture * ready_posture_pt;
+// ready_pack_pt is used to tell connecting_tf_thread that one of the postures need update
+s_server_pack * ready_pack_pt;
 // this signal tells room_thread that a new posture is calculated 
 int tf_ready_signal;
 
@@ -153,19 +155,22 @@ void * connecting_target_flighter_thread(void * vargp){
 	// same as above
 	int connfd_rec,connfd_sen,connfd;
 	struct sockaddr_storage clientaddr;
-	posture * tf_posture;
+	//posture * tf_posture;
+	//s_server_pack * tf_pack;
 	socket_role * role;
 	int rec_bytes;
 	int flags;
 
 	clientlen = sizeof(struct sockaddr_storage);
 
-	tf_posture = (posture *)malloc(sizeof(posture));
+	//tf_posture = (posture *)malloc(sizeof(posture));
+	//tf_pack = (s_server_pack *)malloc(sizeof(s_server_pack));
 	role = (socket_role *)malloc(sizeof(socket_role));
 
 	pthread_detach(pthread_self());
 
 	connfd = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
+	printf("[TF_THREAD]first socket accepted\n");
 	
 	// set fd to be nonblock
 	flags = fcntl(connfd,F_GETFL,0);
@@ -175,10 +180,13 @@ void * connecting_target_flighter_thread(void * vargp){
 	rec_bytes = rio_readnb(&rio,role,sizeof(socket_role));
 	REC_BYTES_CHECK(rec_bytes,sizeof(socket_role),"****** E R R O R: timeout in connecting to target flighter server ******\n");
 
+	
+	printf("first socket role connected\n");
 	if(role->type == ROLE_SEND){
 		connfd_sen = connfd;
-		connfd = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
-		
+		printf("[TF_THREAD] accepted sock_sen call accept\n");
+		connfd = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);	
+		printf("[TF_THREAD] sock_rec accepted!\n");
 		// set fd to be nonblock
 		flags = fcntl(connfd,F_GETFL,0);
 		fcntl(connfd,F_SETFL,flags | O_NONBLOCK);
@@ -189,17 +197,17 @@ void * connecting_target_flighter_thread(void * vargp){
 	}
 	else if(role->type == ROLE_RECV){
 		connfd_rec = connfd;
+		printf("[TF_THREAD] accepted sock_rec call accept\n");
 		connfd_sen = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
-		
 		// set fd to be nonblock
+		printf("[TF_THREAD] sock_sen accpted\n");
 		flags = fcntl(connfd_sen,F_GETFL,0);
 		fcntl(connfd_sen,F_SETFL,flags | O_NONBLOCK);
-
-
 		rio_readinitb(&rio,connfd_sen);
 		rec_bytes = rio_readnb(&rio,role,sizeof(socket_role));
 	}
 	else{
+		printf("ERROR\n");
 		pthread_mutex_lock(&mut_printf);
 		fprintf(stderr,"[TF_THREAD] wrong pack\n");
 		pthread_mutex_unlock(&mut_printf);
@@ -207,7 +215,7 @@ void * connecting_target_flighter_thread(void * vargp){
 	}
 	REC_BYTES_CHECK(rec_bytes,sizeof(socket_role),"****** E R R O R: timeout in connecting to target flighter server ******\n");
 
-	
+	// rio for received data only 
 	rio_readinitb(&rio,connfd_rec);
 	
 
@@ -218,27 +226,27 @@ void * connecting_target_flighter_thread(void * vargp){
 	while(1){
 		pthread_mutex_lock(&mut_tf);
 		// not NULL and 1 means OK
-		while(ready_posture_pt == NULL){
+		while(ready_pack_pt == NULL){
 			pthread_cond_wait(&cond_tf,&mut_tf);
 		}
 		pthread_mutex_lock(&mut_printf);
-		printf("[TF_THREAD] tf_server working posture: %d %d %d %d %d %d %d %d %d %d %d %d\n",ready_posture_pt->x,ready_posture_pt->y,ready_posture_pt->z,
-				ready_posture_pt->u,ready_posture_pt->v,ready_posture_pt->w,ready_posture_pt->vx,ready_posture_pt->vy,ready_posture_pt->vz,
-				ready_posture_pt->vu,ready_posture_pt->vv,ready_posture_pt->vw);
+		printf("[TF_THREAD] tf_server working posture: %d %d %d %d %d %d %d %d %d %d %d %d\n",ready_pack_pt->p.x,ready_pack_pt->p.y,ready_pack_pt->p.z,
+				ready_pack_pt->p.u,ready_pack_pt->p.v,ready_pack_pt->p.w,ready_pack_pt->p.vx,ready_pack_pt->p.vy,ready_pack_pt->p.vz,
+				ready_pack_pt->p.vu,ready_pack_pt->p.vv,ready_pack_pt->p.vw);
 		pthread_mutex_unlock(&mut_printf);
 
-		rio_writen(connfd_sen,(char *)ready_posture_pt,sizeof(posture));
+		rio_writen(connfd_sen,(char *)ready_pack_pt,sizeof(s_server_pack));
 		
-		rec_bytes = rio_readnb(&rio,(char *)ready_posture_pt,sizeof(posture));
-		REC_BYTES_CHECK(rec_bytes,sizeof(socket_role),"****** E R R O R: timeout in connecting to target flighter server ******\n");
+		rec_bytes = rio_readnb(&rio,(char *)&(ready_pack_pt->p),sizeof(posture));
+		REC_BYTES_CHECK(rec_bytes,sizeof(posture),"****** E R R O R: timeout in reading posture from target flighter server ******\n");
 
 		pthread_mutex_lock(&mut_printf);
-		printf("[TF_THREAD] new posture: %d %d %d %d %d %d %d %d %d %d %d %d\n",ready_posture_pt->x,ready_posture_pt->y,ready_posture_pt->z,
-				ready_posture_pt->u,ready_posture_pt->v,ready_posture_pt->w,ready_posture_pt->vx,ready_posture_pt->vy,ready_posture_pt->vz,
-				ready_posture_pt->vu,ready_posture_pt->vv,ready_posture_pt->vw);
+		printf("[TF_THREAD] new posture: %d %d %d %d %d %d %d %d %d %d %d %d\n",ready_pack_pt->p.x,ready_pack_pt->p.y,ready_pack_pt->p.z,
+				ready_pack_pt->p.u,ready_pack_pt->p.v,ready_pack_pt->p.w,ready_pack_pt->p.vx,ready_pack_pt->p.vy,ready_pack_pt->p.vz,
+				ready_pack_pt->p.vu,ready_pack_pt->p.vv,ready_pack_pt->p.vw);
 		pthread_mutex_unlock(&mut_printf);
 		// NULL and 0 means not OK
-		ready_posture_pt = NULL;
+		ready_pack_pt = NULL;
 		pthread_cond_broadcast(&cond_tf);
 		pthread_mutex_unlock(&mut_tf);
 	}
@@ -262,16 +270,18 @@ void * connecting_s_server_thread(void * vargp){
 	int connfd,connfd_rec,connfd_sen;
 	struct sockaddr_storage clientaddr;
 
-	posture * p_pt;
+	s_server_pack * pack_pt;
 	socket_role * role;
 
+	pack_pt = (s_server_pack *)malloc(sizeof(s_server_pack));
 	role = (socket_role *)malloc(sizeof(socket_role));	
 
 	clientlen = sizeof(struct sockaddr_storage);
 
 	if(S_SERVER_WORK){
-		connfd = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
-		
+		connfd = accept(sserver_listenfd,(SA *)&clientaddr,&clientlen);
+		printf("[CONNECTING_S_SERVER_THREAD]Simulink Server connected!\n");		
+
 		// set fd to be nonblock
 		flags = fcntl(connfd,F_GETFL,0);
 		fcntl(connfd,F_SETFL,flags | O_NONBLOCK);
@@ -281,7 +291,7 @@ void * connecting_s_server_thread(void * vargp){
 		REC_BYTES_CHECK(rec_bytes,sizeof(socket_role),"****** E R R O R: timeout in connecting to s server ******\n");
 		if(role->type == ROLE_SEND){
 			connfd_sen = connfd;
-			connfd = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
+			connfd = accept(sserver_listenfd,(SA *)&clientaddr,&clientlen);
 			
 			// set fd to be nonblock
 			flags = fcntl(connfd,F_GETFL,0);
@@ -293,7 +303,7 @@ void * connecting_s_server_thread(void * vargp){
 		}
 		else if(role->type == ROLE_RECV){
 			connfd_rec = connfd;
-			connfd_sen = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
+			connfd_sen = accept(sserver_listenfd,(SA *)&clientaddr,&clientlen);
 	
 			// set fd to be nonblock
 			flags = fcntl(connfd_sen,F_GETFL,0);
@@ -336,31 +346,37 @@ void * connecting_s_server_thread(void * vargp){
 		
 		buf[0] = '\0';
 		if(S_SERVER_WORK){
+			memcpy(&(pack_pt->p.x),&(ready_f_s_pt->x),sizeof(int32_t)*12);
+			/*pack_pt->p.x = ready_f_s_pt->x;
+			pack_pt->p.y = ready_f_s_pt->y;
+			pack_pt->p.z = ready_f_s_pt->z;
+			pack_pt->p.u = ready_f_s_pt->u;
+			pack_pt->p.v = ready_f_s_pt->v;
+			pack_pt->p.w = ready_f_s_pt->w;*/
+			memcpy(&(pack_pt->o.pitch),&(ready_f_o_pt->pitch),sizeof(int32_t)*5);
 
-			p_pt->x = ready_f_s_pt->x;
-			p_pt->y = ready_f_s_pt->y;
-			p_pt->z = ready_f_s_pt->z;
-			p_pt->u = ready_f_s_pt->u;
-			p_pt->v = ready_f_s_pt->v;
-			p_pt->w = ready_f_s_pt->w;
+			/*pack_pt->o.pitch = ready_f_o_pt->pitch;
+			pack_pt->o.roll = ready_f_o_pt->roll;
+			pack_pt->o.dir = ready_f_o_pt->direction;
+			pack_pt->o.acc = ready_f_o_pt->acceleration;
+			pack_pt->o.launch_weapon = ready_f_o_pt->launch_weapon;*/
 
-			//XXX: this is the only position that uses rio_readnb
-			rec_bytes = rio_readnb(&rio,(char *)p_pt,sizeof(posture));
-			REC_BYTES_CHECK(rec_bytes,sizeof(socket_role),"****** E R R O R: timeout in connecting to s server ******\n");
+			rio_writen(connfd_sen,(char *)pack_pt,sizeof(s_server_pack));
+			pthread_mutex_lock(&mut_printf);
+			printf("[CONNECTING_S_SERVER_THREAD] send: [posture]%d %d %d[op] %d %d %d %d\n",pack_pt->p.x,pack_pt->p.y,pack_pt->p.z,
+				pack_pt->o.roll,pack_pt->o.pitch,pack_pt->o.dir,pack_pt->o.acc);
+			pthread_mutex_unlock(&mut_printf);
+
+			rec_bytes = rio_readnb(&rio,(char *)&(pack_pt->p),sizeof(posture));
+			REC_BYTES_CHECK(rec_bytes,sizeof(posture),"****** E R R O R: timeout in reading posture from s server ******\n");
 			
 			pthread_mutex_lock(&mut_printf);
-			printf("[CONNECTING_S_SERVER_THREAD] receive: %d %d %d\n",p_pt->x,p_pt->y,p_pt->z);
+			printf("[CONNECTING_S_SERVER_THREAD] receive: %d %d %d\n",pack_pt->p.x,pack_pt->p.y,pack_pt->p.z);
 			pthread_mutex_unlock(&mut_printf);
 
-			rio_writen(connfd_sen,(char *)p_pt,sizeof(posture));
-			pthread_mutex_lock(&mut_printf);
-			printf("[CONNECTING_S_SERVER_THREAD] send: %d %d %d\n",p_pt->x,p_pt->y,p_pt->z);
-			pthread_mutex_unlock(&mut_printf);
 			//TODO: according to ready_f_s_pt and ready_f_o_pt calculate a new status
 			//TODO: remember to add 1 in the tic of new status
-			ready_f_s_pt->x = p_pt->x;
-			ready_f_s_pt->y = p_pt->y;
-			ready_f_s_pt->z = p_pt->z;
+			memcpy(&(ready_f_s_pt->x),&(pack_pt->p.x),sizeof(int32_t)*12);
 		}
 		else{
 			ready_f_s_pt->x++;
@@ -521,15 +537,15 @@ void * client_thread(void * vargp){
 				pthread_mutex_unlock(&mut_printf);
 
 				buf_pt = buf;
-
+				f_o_pt->user_id = client_id;
 				f_o_pt->tic = client_clock;
 				//client_id = atoi(net_f_o.user_id);
 				timestamp = net_f_o.timestamp;
-				net_pitch_op = net_f_o.op_pitch;
-				net_roll_op = net_f_o.op_roll;
-				net_dir_op = net_f_o.op_dir;
-				net_acc_op = net_f_o.op_acc;
-				net_lw_op = net_f_o.launch_weapon;
+				f_o_pt->pitch = net_pitch_op = net_f_o.op_pitch;
+				f_o_pt->roll = net_roll_op = net_f_o.op_roll;
+				f_o_pt->direction = net_dir_op = net_f_o.op_dir;
+				f_o_pt->acceleration = net_acc_op = net_f_o.op_acc;
+				f_o_pt->launch_weapon = net_lw_op = net_f_o.launch_weapon;
 				net_destroyed_flighter_n = net_f_o.detected_destroyed_flighters;
 				net_destroyed_weapon_n = net_f_o.detected_destroyed_weapons;
 
@@ -699,12 +715,15 @@ void * room_thread(void * vargp){
 	int i;
 	int room_clock;
 	flighter_status * f_s_pt;
+	flighter_op * f_o_pt;
 	int size;
 	int alive_group_id;
 	int game_should_end;
-	
+	char * match_record;
+	int mr_cursor;	
+
 	// for practisse mode only
-	posture * posture_pt;
+	s_server_pack * pack_pt;
 	// all target_flighter id 0
 	int tf_id;
 
@@ -737,6 +756,9 @@ void * room_thread(void * vargp){
 	// cmap mapping flighter_id to number of clients that judge this flight to be dead
 	ccr_rw_map cmap_fid2desct;
 
+	match_record = (char *)malloc(MATCH_RECORD_MAX_SIZE);
+	mr_cursor = 0;
+
 	ccr_rw_map_init(&cmap_fid2desct);
 	
 	r_i_pt = (room_info *)malloc(sizeof(room_info));
@@ -752,7 +774,7 @@ void * room_thread(void * vargp){
 	
 	pthread_detach(pthread_self());
 	
-	posture_pt = (posture *)calloc(1,sizeof(posture));
+	pack_pt = (s_server_pack *)calloc(1,sizeof(s_server_pack));
 	tf_id = 0;
 
 	// TODO:fault check
@@ -919,10 +941,10 @@ void * room_thread(void * vargp){
 	if(r_i_pt->match_type == 0){
 		net_f_s.user_id = tf_id;
 		rand_angle = RAND_ANGLE();
-		posture_pt->x = (int32_t)100*1000*cos(rand_angle);
-		posture_pt->y = (int32_t)100*1000*sin(rand_angle);
-		posture_pt->z = 1*1000;
-		memcpy((char *)&(net_f_s.x),(char *)&(posture_pt->x),sizeof(int32_t)*12);
+		pack_pt->p.x = (int32_t)100*1000*cos(rand_angle);
+		pack_pt->p.y = (int32_t)100*1000*sin(rand_angle);
+		pack_pt->p.z = 1*1000;
+		memcpy((char *)&(net_f_s.x),(char *)&(pack_pt->p.x),sizeof(int32_t)*12);
 		net_f_s.loaded_weapon_types = 0;
 		memcpy(buf+cursor,(char *)&net_f_s,sizeof(net_flighter_status));
 		cursor += sizeof(net_flighter_status);
@@ -934,6 +956,8 @@ void * room_thread(void * vargp){
 		(*(r_i_pt->clients+i)).overall_status = buf;
 		//printf("SFL!\n");
 	}
+
+	memcpy(match_record,buf,cursor);
 	
 	pthread_mutex_lock(&mut_printf);
 	printf("[ROOM_THREAAD id %d] room configuration completed, begin real work\n",r_i_pt->room_id);
@@ -987,18 +1011,18 @@ void * room_thread(void * vargp){
 		if(r_i_pt->match_type == 0){
 			if(TARGET_FLIGHTER_WORK){
 				pthread_mutex_lock(&mut_tf);
-				while(ready_posture_pt != NULL){
+				while(ready_pack_pt != NULL){
 					pthread_cond_wait(&cond_tf,&mut_tf);
 				}
 				pthread_mutex_lock(&mut_printf);
 				printf("[ROOM_THREAAD id %d] asking target flighter server to work\n",r_i_pt->room_id);
 				pthread_mutex_unlock(&mut_printf);
 
-				ready_posture_pt = posture_pt;
+				ready_pack_pt = pack_pt;
 				pthread_cond_broadcast(&cond_tf);
 				pthread_mutex_unlock(&mut_tf);
 				// waits for tf_thread to complete
-				while(ready_posture_pt != NULL){
+				while(ready_pack_pt != NULL){
 					continue;
 				}
 				pthread_mutex_lock(&mut_printf);
@@ -1051,6 +1075,15 @@ void * room_thread(void * vargp){
 				}
 			}
 		}
+		// record flighter_op of this tic
+		for(i = 0; i < r_i_pt->size; i++){
+			f_o_pt = &((*(r_i_pt->clients+i)).fos->op);
+			memcpy(match_record+mr_cursor,(char *)&f_o_pt,sizeof(flighter_op));
+			mr_cursor += sizeof(flighter_op);
+		}
+
+		
+
 
 		if(game_should_end == 1){
 			net_m_s.timestamp = -1;
@@ -1063,7 +1096,11 @@ void * room_thread(void * vargp){
 				(r_i_pt->clients+i)->overall_status = buf;
 				(r_i_pt->clients+i)->os_size = sizeof(net_match_status);
 			}
-					
+			// record
+			memcpy(match_record+mr_cursor,buf,cursor);
+			mr_cursor += cursor;				
+			// TODO: write to local fS	
+
 			pthread_mutex_lock(&mut_printf);
 			printf("[ROOM_THREAAD id %d] room status of clock %d:\n #### Group %d has won! Game over ####\n",r_i_pt->room_id,room_clock,alive_group_id);
 			pthread_mutex_unlock(&mut_printf);
@@ -1103,7 +1140,7 @@ void * room_thread(void * vargp){
 		// practise mode: add target_flighter
 		if(r_i_pt->match_type == 0){
 			net_f_s.user_id = tf_id;
-			memcpy((char *)&(net_f_s.x),(char *)&(posture_pt->x),sizeof(int32_t)*12);
+			memcpy((char *)&(net_f_s.x),(char *)&(pack_pt->p.x),sizeof(int32_t)*12);
 			net_f_s.loaded_weapon_types = 0;
 		
 			memcpy(buf+cursor,(char *)&net_f_s,sizeof(net_flighter_status));
@@ -1116,6 +1153,10 @@ void * room_thread(void * vargp){
 
 		}
 
+		//record
+		memcpy(match_record+mr_cursor,buf,cursor);
+		mr_cursor+=cursor;
+		// TODO: write to FS
 
 		for(i = 0; i < r_i_pt->size; i++){
 			(r_i_pt->clients+i)->overall_status = buf;
@@ -1203,7 +1244,7 @@ int main(int argc,char * argv[]){
 	// mutex & cond for target flighter server
 	pthread_mutex_init(&mut_tf,NULL);
 	pthread_cond_init(&cond_tf,NULL);
-	ready_posture_pt = NULL;	
+	ready_pack_pt = NULL;	
 	tf_ready_signal = 1;
 	// stdout
 	pthread_mutex_init(&mut_printf,NULL);
