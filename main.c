@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 #define MOVE_AHEAD_IN_BUF(p) (strchr(p,' ')+1)
 #define S_SERVER_WORK 0
 #define TARGET_FLIGHTER_WORK 0
@@ -14,6 +15,8 @@
 #define ROOM_MAX_WAITING_MSEC (10*1000)
 #define N_M_SIZE (sizeof(net_match_status))
 #define N_F_SIZE (sizeof(net_flighter_status))
+#define PI 3.1415926
+#define RAND_ANGLE() ((((double)(rand()%180))/180.0)*PI)
 // A BRIEF INTRODUCTION TO THIS SERVER:
 // 1. a main thread listens for room server to send room info
 // 2. a secondary main thread listens for clients
@@ -714,6 +717,7 @@ void * room_thread(void * vargp){
 	struct timespec ts;
 	long long start,current;
 	int room_restart;	
+	double rand_angle;
 
 	net_match_status net_m_s;
 	net_flighter_status net_f_s;
@@ -880,6 +884,13 @@ void * room_thread(void * vargp){
 	else{
 		// TODO: Network problem
 	}
+	ccr_rw_map_insert(&cmap_rid2rinfo,r_i_pt->room_id,(uint64_t)r_i_pt);
+
+	rio_writen(connfd,res_content,strlen(res_content));
+	close(connfd);
+
+
+	//printf("LDB!\n");
 	// after configuration for room set init status
 	net_m_s.timestamp = room_clock;
 	net_m_s.steplength = r_i_pt->simulation_steplength;
@@ -889,35 +900,41 @@ void * room_thread(void * vargp){
 	net_m_s.winner_group = 0;
 	memcpy(buf,(char *)&net_m_s,sizeof(net_match_status));
 	cursor = sizeof(net_match_status);	
+	//printf("HS!\n");
 	// TODO: loaded_weapon_types
 	for(i = 0; i < r_i_pt->size; i++){
 		f_s_pt = &((*(r_i_pt->clients+i)).fos->s);
+		rand_angle = RAND_ANGLE();
+		f_s_pt->x = (int32_t)100*1000*cos(rand_angle);
+		f_s_pt->y = (int32_t)100*1000*sin(rand_angle);
+		f_s_pt->z = 1000;
 		net_f_s.user_id = f_s_pt->user_id;
 		memcpy((char *)&(net_f_s.x),(char *)&(f_s_pt->x),sizeof(int32_t)*12);
 		net_f_s.loaded_weapon_types = 0;		
 		memcpy(buf+cursor,(char *)&net_f_s,sizeof(net_flighter_status));
 		cursor += sizeof(net_flighter_status);
+		//printf("DS!\n");
 	}
 	// practise mode: add target_flighter
 	if(r_i_pt->match_type == 0){
 		net_f_s.user_id = tf_id;
+		rand_angle = RAND_ANGLE();
+		posture_pt->x = (int32_t)100*1000*cos(rand_angle);
+		posture_pt->y = (int32_t)100*1000*sin(rand_angle);
+		posture_pt->z = 1*1000;
 		memcpy((char *)&(net_f_s.x),(char *)&(posture_pt->x),sizeof(int32_t)*12);
 		net_f_s.loaded_weapon_types = 0;
 		memcpy(buf+cursor,(char *)&net_f_s,sizeof(net_flighter_status));
 		cursor += sizeof(net_flighter_status);
+		//printf("HC..\n");
 	}
 	// TODO: set start position properly & give it to each client
-
-
-	ccr_rw_map_insert(&cmap_rid2rinfo,r_i_pt->room_id,(uint64_t)r_i_pt);
-
-	rio_writen(connfd,res_content,strlen(res_content));
-	close(connfd);
+	for(i = 0; i < r_i_pt->size;i++){
+		(*(r_i_pt->clients+i)).os_size = cursor;
+		(*(r_i_pt->clients+i)).overall_status = buf;
+		//printf("SFL!\n");
+	}
 	
-	posture_pt->x = r_i_pt->room_id % 2 ? 100*1000 : 0;
-	posture_pt->y = r_i_pt->room_id % 2 ? 0 : 100*1000;
-	posture_pt->z = 1*1000;
-
 	pthread_mutex_lock(&mut_printf);
 	printf("[ROOM_THREAAD id %d] room configuration completed, begin real work\n",r_i_pt->room_id);
 	pthread_mutex_unlock(&mut_printf);
@@ -1162,6 +1179,8 @@ int main(int argc,char * argv[]){
 		fprintf(stderr,"net error\n");
 		return -1;
 	}
+
+	srand(time(NULL));
 
 	max_rooms = atoi(argv[6]);
 	max_clients = atoi(argv[7]);
