@@ -707,7 +707,7 @@ void * room_thread(void * vargp){
 	struct sockaddr_storage clientaddr;
 	socklen_t clientlen;
 	rio_t rio;
-	size_t n;
+	int n;
 	char buf[MAXLINE];
 	char temp_buf[MAXLINE];
 	char * buf_pt;
@@ -793,7 +793,8 @@ void * room_thread(void * vargp){
 	pthread_mutex_unlock(&mut_printf);
 
 	// POST url .. etc
-	rio_readlineb(&rio,buf,MAXLINE);
+	n = rio_readlineb(&rio,buf,MAXLINE);
+	REC_BYTES_CHECK(n,-1,"[ROOM_THREAD]************** time out in reading url msg from room server ********************\n");
 	printf("%s",buf);
 	// headers
 	read_requesthdrs(&rio);
@@ -817,7 +818,9 @@ void * room_thread(void * vargp){
 	// read room info from room server
 	// just basic configurations
 	if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
+		REC_BYTES_CHECK(n,-1,"[ROOM_THREAD] ************* time out in reading fig info from room server **************\n");
 		// TODO: delete output
+		printf("[ROOM_THRAD] ready to receive official room content...\n");
 		printf("%s",buf);
 
 		buf_pt = buf;

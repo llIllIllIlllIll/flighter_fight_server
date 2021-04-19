@@ -80,7 +80,7 @@ static ssize_t rio_read (rio_t *rp , char *usrbuf , size_t n)
     rp->rio_cnt -=cnt;
     return cnt;
 }
-ssize_t rio_readlineb(rio_t *rp,void *usrbuf,size_t maxlen){
+int rio_readlineb(rio_t *rp,void *usrbuf,size_t maxlen){
     int n,rc;
     struct timeval tv;
     long long start,current;
