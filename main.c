@@ -12,7 +12,7 @@
 // This macro is used to check return value of rio_readnb and rio_readlineb
 // and when dealing with rio_readlineb n should be set to 0
 #define REC_BYTES_CHECK(A,B,msg) if((A)<(B)){pthread_mutex_lock(&mut_printf);fprintf(stderr,msg);pthread_mutex_unlock(&mut_printf);pthread_exit(NULL);}
-#define ROOM_MAX_WAITING_MSEC (10*1000)
+#define ROOM_MAX_WAITING_MSEC (60*1000)
 #define N_M_SIZE (sizeof(net_match_status))
 #define N_F_SIZE (sizeof(net_flighter_status))
 #define PI 3.1415926
@@ -468,8 +468,10 @@ void * client_thread(void * vargp){
 	connfd = sbuf_remove(&sbuf_for_clients);
 	
 	// set fd to be nonblock
-	flags = fcntl(connfd,F_GETFL,0);
-	fcntl(connfd,F_SETFL,flags | O_NONBLOCK);
+	//flags = fcntl(connfd,F_GETFL,0);
+	//fcntl(connfd,F_SETFL,flags | O_NONBLOCK);
+	
+	fcntl(connfd,F_SETFL,O_NONBLOCK);	
 
 	rio_readinitb(&rio,connfd);
 	
@@ -820,11 +822,15 @@ void * room_thread(void * vargp){
 
 	// read room info from room server
 	// just basic configurations
-	if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
+	n = rio_readlineb(&rio,buf,MAXLINE);
+	while(n < 5){
+		n = rio_readlineb(&rio,buf,MAXLINE);
+	}
+	if(1){
 		REC_BYTES_CHECK(n,-1,"[ROOM_THREAD] ************* time out in reading fig info from room server **************\n");
 		// TODO: delete output
 		printf("[ROOM_THRAD] ready to receive official room content...\n");
-		printf("%s",buf);
+		printf("[buf content] [%d bytes]%s\n",strlen(buf),buf);
 
 		buf_pt = buf;
 		// TODO: check if at any time atoi returns 0
@@ -1011,6 +1017,7 @@ void * room_thread(void * vargp){
 		pthread_mutex_lock(&mut_printf);
 		printf("[ROOM_THREAAD id %d] room sync accomplished clock %d\n",r_i_pt->room_id,room_clock);
 		pthread_mutex_unlock(&mut_printf);
+		//sleep(1);
 		// when a room_thread is asking tf_thread to work
 		// it sets tf_ready_signal to 0
 		// and when tf_thread finishes working
