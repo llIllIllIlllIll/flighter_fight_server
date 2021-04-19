@@ -719,8 +719,11 @@ void * room_thread(void * vargp){
 	int size;
 	int alive_group_id;
 	int game_should_end;
+	// match_record format:
+	// for every tick: [MATCH_STATUS](and following flighter_status ofc) [FLIGHTER_OPS]
 	char * match_record;
 	int mr_cursor;	
+	int mr_fd;
 
 	// for practisse mode only
 	s_server_pack * pack_pt;
@@ -960,6 +963,7 @@ void * room_thread(void * vargp){
 		//printf("SFL!\n");
 	}
 
+	// init status recorded in match_record
 	memcpy(match_record,buf,cursor);
 	
 	pthread_mutex_lock(&mut_printf);
@@ -1103,10 +1107,16 @@ void * room_thread(void * vargp){
 			memcpy(match_record+mr_cursor,buf,cursor);
 			mr_cursor += cursor;				
 			// TODO: write to local fS	
+			sprintf(buf,"./match_records/match_type%d_id%d.rec",r_i_pt->match_type,r_i_pt->match_id);
+			mr_fd = open(buf,O_WRONLY|O_CREAT,0644);
+			rio_writen(mr_fd,match_record,mr_cursor);
+			close(mr_fd);
 
 			pthread_mutex_lock(&mut_printf);
-			printf("[ROOM_THREAAD id %d] room status of clock %d:\n #### Group %d has won! Game over ####\n",r_i_pt->room_id,room_clock,alive_group_id);
+			printf("[ROOM_THREAAD id %d] [GAME id %d]room status of clock %d:\n #### Group %d has won! Game over ####\n",r_i_pt->room_id,r_i_pt->match_id,room_clock,alive_group_id);
 			pthread_mutex_unlock(&mut_printf);
+				
+			
 
 			// when room_clock moves on notify all clients to move on
 			pthread_mutex_lock(&mut_clients);
