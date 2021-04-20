@@ -9,6 +9,10 @@
 #define MOVE_AHEAD_IN_BUF(p) (strchr(p,' ')+1)
 #define S_SERVER_WORK 1
 #define TARGET_FLIGHTER_WORK 1
+// This macro is defined in 2021.4.20:
+// When two clients participate in a match togetehr the game process moves surprisingly slow
+// and I need to use a timer to find the bottleneck
+#define SINGLE_ROOM_DEBUG
 // This macro is used to check return value of rio_readnb and rio_readlineb
 // and when dealing with rio_readlineb n should be set to 0
 #define REC_BYTES_CHECK(A,B,msg) if((A)<(B)){pthread_mutex_lock(&mut_printf);fprintf(stderr,msg);pthread_mutex_unlock(&mut_printf);pthread_exit(NULL);}
@@ -19,6 +23,7 @@
 #define RAND_ANGLE() ((((double)(rand()%4))/4.0)*PI)
 // 4MB
 #define MATCH_RECORD_MAX_SIZE (1<<22)
+//#define DEBUG
 // A BRIEF INTRODUCTION TO THIS SERVER:
 // 1. a main thread listens for room server to send room info
 // 2. a secondary main thread listens for clients
@@ -37,7 +42,6 @@ ccr_rw_map cmap_rid2rinfo;
 int clients_listenfd;
 ccr_ct cct_rooms;
 ccr_ct cct_clients;
-
 int max_rooms;
 int max_clients;
 
@@ -70,6 +74,8 @@ pthread_cond_t cond_tf;
 
 // mutex protect STDOUT
 pthread_mutex_t mut_printf;
+
+
 
 // this thread communicates with Director Server and is capable of controlling process
 // in each room 
@@ -272,11 +278,17 @@ void * connecting_s_server_thread(void * vargp){
 
 	s_server_pack * pack_pt;
 	socket_role * role;
+#ifdef SINGLE_ROOM_DEBUG
+	struct timeval srd_tv;
+	long long srd_start,srd_current;
+	double srd_secs;
+#endif
 
 	pack_pt = (s_server_pack *)malloc(sizeof(s_server_pack));
 	role = (socket_role *)malloc(sizeof(socket_role));	
 
 	clientlen = sizeof(struct sockaddr_storage);
+
 
 	if(S_SERVER_WORK){
 		connfd = accept(sserver_listenfd,(SA *)&clientaddr,&clientlen);
@@ -333,7 +345,11 @@ void * connecting_s_server_thread(void * vargp){
 		while(ready_client_id == 0){
 			pthread_cond_wait(&cond_s_server,&mut_s_server);
 		}
-		
+#ifdef SINGLE_ROOM_DEBUG
+	gettimeofday(&srd_tv,NULL);
+	srd_start = TV_TO_MSEC(srd_tv);
+#endif	
+	
 		pthread_mutex_lock(&mut_printf);
 		printf("[CONNECTING_S_SERVER_THREAD] start working for client %d\n",ready_client_id);
 		pthread_mutex_unlock(&mut_printf);
@@ -361,6 +377,10 @@ void * connecting_s_server_thread(void * vargp){
 			pack_pt->o.acc = ready_f_o_pt->acceleration;
 			pack_pt->o.launch_weapon = ready_f_o_pt->launch_weapon;*/
 
+#ifdef SINGLE_ROOM_DEBUG
+	gettimeofday(&srd_tv,NULL);
+	srd_start = TV_TO_MSEC(srd_tv);
+#endif	
 			rio_writen(connfd_sen,(char *)pack_pt,sizeof(s_server_pack));
 			pthread_mutex_lock(&mut_printf);
 			printf("[CONNECTING_S_SERVER_THREAD] send: [posture]%d %d %d[op] %d %d %d %d\n",pack_pt->p.x,pack_pt->p.y,pack_pt->p.z,
@@ -370,6 +390,15 @@ void * connecting_s_server_thread(void * vargp){
 			rec_bytes = rio_readnb(&rio,(char *)&(pack_pt->p),sizeof(posture));
 			REC_BYTES_CHECK(rec_bytes,sizeof(posture),"****** E R R O R: timeout in reading posture from s server ******\n");
 			
+#ifdef SINGLE_ROOM_DEBUG
+	gettimeofday(&srd_tv,NULL);
+	srd_current = TV_TO_MSEC(srd_tv);
+	srd_secs = (srd_current-srd_start)/1000.0;
+	pthread_mutex_lock(&mut_printf);
+	printf("\n\n[CONNECTING_S_SERVER_THREAD] ###SINGLE_ROOM_DEBUG MODE### SSERVER NET_READ TAKES TIME:%lf\n\n",srd_secs);
+	pthread_mutex_unlock(&mut_printf);
+#endif
+
 			pthread_mutex_lock(&mut_printf);
 			printf("[CONNECTING_S_SERVER_THREAD] receive: %d %d %d\n",pack_pt->p.x,pack_pt->p.y,pack_pt->p.z);
 			pthread_mutex_unlock(&mut_printf);
@@ -384,8 +413,16 @@ void * connecting_s_server_thread(void * vargp){
 			ready_f_s_pt->z++;
 		}
 		ready_f_s_pt->tic++;
-
 		ready_client_id = 0;
+#ifdef SINGLE_ROOM_DEBUG
+	gettimeofday(&srd_tv,NULL);
+	srd_current = TV_TO_MSEC(srd_tv);
+	srd_secs = (srd_current-srd_start)/1000.0;
+	pthread_mutex_lock(&mut_printf);
+	printf("\n\n[CONNECTING_S_SERVER_THREAD] ###SINGLE_ROOM_DEBUG MODE### SSERVER WORK TAKES TIME:%lf\n\n",srd_secs);
+	pthread_mutex_unlock(&mut_printf);
+#endif
+
 		pthread_cond_broadcast(&cond_s_server);
 
 		pthread_mutex_unlock(&mut_s_server);
@@ -434,6 +471,11 @@ void * client_thread(void * vargp){
 	net_destroyed_weapon net_d_w;
 	// TODO: appropriate init_status needed
 	//net_match_status init_status;
+#ifdef SINGLE_ROOM_DEBUG
+	struct timeval srd_tv;
+	long long srd_start,srd_current;
+	double srd_secs;
+#endif
 	
 	init_status_buffer = (char *)malloc(N_M_SIZE+2*N_F_SIZE);	
 	
@@ -528,6 +570,14 @@ void * client_thread(void * vargp){
 
 	while(1){
 		if(client_clock == *room_clock_pt){
+#ifdef SINGLE_ROOM_DEBUG
+		gettimeofday(&srd_tv,NULL);
+		srd_start = TV_TO_MSEC(srd_tv);
+		pthread_mutex_lock(&mut_printf);
+		printf("\n\n[CLIENT_THREAD id %d] ###SINGLE_ROOM_DEBUG### ###STATUS:CLIENT CLOCK JUST MOVED### CURRENT MSEC:%lld\n\n",client_id,srd_start);
+		pthread_mutex_unlock(&mut_printf);
+#endif
+	
 			printf("[CLIENT_THREAD id %d] ready to read op from client\n",c_i_pt->id);
 			n = rio_readnb(&rio,&net_f_o,sizeof(net_flighter_op));
 			printf("res : %d\n",n);
@@ -537,6 +587,14 @@ void * client_thread(void * vargp){
 				pthread_mutex_lock(&mut_printf);
 				printf("[CLIENT_THREAD id %d]content read in op of clock %d:%s[END]\n",c_i_pt->id,client_clock,buf);
 				pthread_mutex_unlock(&mut_printf);
+#ifdef SINGLE_ROOM_DEBUG
+		gettimeofday(&srd_tv,NULL);
+		srd_current = TV_TO_MSEC(srd_tv);
+		srd_secs = (srd_current - srd_start)/1000.0;
+		pthread_mutex_lock(&mut_printf);
+		printf("\n\n[CLIENT_THREAD id %d] ###SINGLE_ROOM_DEBUG### ###STATUS:CLIENT OP READ### TIME ELASPED:%lf\n\n",client_id,srd_secs);
+		pthread_mutex_unlock(&mut_printf);
+#endif
 
 				buf_pt = buf;
 				f_o_pt->user_id = client_id;
@@ -581,6 +639,14 @@ void * client_thread(void * vargp){
 				continue;
 			}
 			
+#ifdef SINGLE_ROOM_DEBUG
+		gettimeofday(&srd_tv,NULL);
+		srd_current = TV_TO_MSEC(srd_tv);
+		srd_secs = (srd_current - srd_start)/1000.0;
+		pthread_mutex_lock(&mut_printf);
+		printf("\n\n[CLIENT_THREAD id %d] ###SINGLE_ROOM_DEBUG### ###STATUS:CLIENT OP PROCESSED### TIME ELASPED:%lf\n\n",client_id,srd_secs);
+		pthread_mutex_unlock(&mut_printf);
+#endif
 			pthread_mutex_lock(&mut_printf);
 			printf("[CLIENT_THREAD id %d] has sent opeartion for clock %d\n",c_i_pt->id,client_clock);
 			pthread_mutex_unlock(&mut_printf);
@@ -606,6 +672,14 @@ void * client_thread(void * vargp){
 				continue;
 			}
 
+#ifdef SINGLE_ROOM_DEBUG
+		gettimeofday(&srd_tv,NULL);
+		srd_current = TV_TO_MSEC(srd_tv);
+		srd_secs = (srd_current - srd_start)/1000.0;
+		pthread_mutex_lock(&mut_printf);
+		printf("\n\n[CLIENT_THREAD id %d] ###SINGLE_ROOM_DEBUG### ###STATUS:S_SERVER WORK FINISHED### TIME ELASPED:%lf\n\n",client_id,srd_secs);
+		pthread_mutex_unlock(&mut_printf);
+#endif
 			pthread_mutex_lock(&mut_printf);
 			printf("[CLIENT_THREAD id %d] client has finished status calculation for clock %d, ready to sync\n",c_i_pt->id,client_clock);
 			pthread_mutex_unlock(&mut_printf);
@@ -616,10 +690,20 @@ void * client_thread(void * vargp){
 			if(ccr_ct_inc(cct_sync_clients_pt) != 0){
 				//TODO:error	
 			}
+
 			// notify the sleeping room_thread: one of the clients is ready
 			pthread_cond_broadcast(cond_room_pt);
 			pthread_mutex_unlock(mut_room_pt);
 			
+#ifdef SINGLE_ROOM_DEBUG
+		gettimeofday(&srd_tv,NULL);
+		srd_current = TV_TO_MSEC(srd_tv);
+		srd_secs = (srd_current - srd_start)/1000.0;
+		pthread_mutex_lock(&mut_printf);
+		printf("\n\n[CLIENT_THREAD id %d] ###SINGLE_ROOM_DEBUG### ###STATUS:ASK TO SYNC### TIME ELASPED:%lf\n\n",client_id,srd_secs);
+		pthread_mutex_unlock(&mut_printf);
+#endif
+
 			// client_clock ready to go further
 			client_clock++;
 
@@ -641,6 +725,14 @@ void * client_thread(void * vargp){
 			if(((net_match_status *)c_i_pt->overall_status)->timestamp == -1){				
 				break;
 			}
+#ifdef SINGLE_ROOM_DEBUG
+		gettimeofday(&srd_tv,NULL);
+		srd_current = TV_TO_MSEC(srd_tv);
+		srd_secs = (srd_current - srd_start)/1000.0;
+		pthread_mutex_lock(&mut_printf);
+		printf("\n\n[CLIENT_THREAD id %d] ###SINGLE_ROOM_DEBUG### ###STATUS:WRITEBACK### TIME ELASPED:%lf\n\n",client_id,srd_secs);
+		pthread_mutex_unlock(&mut_printf);
+#endif
 		}
 	}
 
@@ -742,6 +834,12 @@ void * room_thread(void * vargp){
 	long long start,current;
 	int room_restart;	
 	double rand_angle;
+
+#ifdef SINGLE_ROOM_DEBUG
+	struct timeval srd_tv;
+	long long srd_start,srd_current;
+	double srd_secs;
+#endif
 
 	net_match_status net_m_s;
 	net_flighter_status net_f_s;
@@ -1017,6 +1115,15 @@ void * room_thread(void * vargp){
 		pthread_mutex_lock(&mut_printf);
 		printf("[ROOM_THREAAD id %d] room sync accomplished clock %d\n",r_i_pt->room_id,room_clock);
 		pthread_mutex_unlock(&mut_printf);
+		
+#ifdef SINGLE_ROOM_DEBUG
+		gettimeofday(&srd_tv,NULL);
+		srd_start = TV_TO_MSEC(srd_tv);
+		pthread_mutex_lock(&mut_printf);
+		printf("\n\n[ROOM_THREAD id %d] ###SINGLE_ROOM_DEBUG### ###STATUS:SYNC ACCOMPLISHED### CURRENT MSEC:%lld\n\n",r_i_pt->room_id,srd_start);
+		pthread_mutex_unlock(&mut_printf);
+#endif
+
 		//sleep(1);
 		// when a room_thread is asking tf_thread to work
 		// it sets tf_ready_signal to 0
@@ -1045,6 +1152,15 @@ void * room_thread(void * vargp){
 			}
 
 		}
+
+
+#ifdef SINGLE_ROOM_DEBUG
+		gettimeofday(&srd_tv,NULL);
+		srd_start = TV_TO_MSEC(srd_tv);
+		pthread_mutex_lock(&mut_printf);
+		printf("\n\n[ROOM_THREAD id %d] ###SINGLE_ROOM_DEBUG### ###STATUS:TF_CALC ACCOMPLISHED### CURRENT MSEC:%lld\n\n",r_i_pt->room_id,srd_start);
+		pthread_mutex_unlock(&mut_printf);
+#endif
 
 		// TODO: deal with target_flighter getting destroyed
 		memset(buf,MAXLINE,0);
@@ -1200,6 +1316,15 @@ void * room_thread(void * vargp){
 		room_clock++;
 		pthread_cond_broadcast(&cond_clients);
 		pthread_mutex_unlock(&mut_clients);
+
+#ifdef SINGLE_ROOM_DEBUG
+		gettimeofday(&srd_tv,NULL);
+		srd_start = TV_TO_MSEC(srd_tv);
+		pthread_mutex_lock(&mut_printf);
+		printf("\n\n[ROOM_THREAD id %d] ###SINGLE_ROOM_DEBUG### ###STATUS:CLIENTS ARE ASKED TO WRITE BACK MATCH_STATUS### CURRENT MSEC:%lld\n\n",r_i_pt->room_id,srd_start);
+		pthread_mutex_unlock(&mut_printf);
+#endif
+
 	
 		ccr_ct_reset(&cct_sync_clients);
 	
@@ -1240,11 +1365,14 @@ int main(int argc,char * argv[]){
 		fprintf(stderr,"net error\n");
 		return -1;
 	}
-
 	srand(time(NULL));
 
 	max_rooms = atoi(argv[6]);
 	max_clients = atoi(argv[7]);
+// In SINGLE_ROOM_DEBUG mode only one room can exist in order to avoid trouble
+#ifdef SINGLE_ROOM_DEBUG
+	max_rooms = 1;
+#endif
 	sbuf_init(&sbuf_for_room_server,max_rooms);
 	sbuf_init(&sbuf_for_clients,max_clients);
 			
