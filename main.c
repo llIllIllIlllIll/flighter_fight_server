@@ -12,7 +12,7 @@
 // This macro is defined in 2021.4.20:
 // When two clients participate in a match togetehr the game process moves surprisingly slow
 // and I need to use a timer to find the bottleneck
-#define SINGLE_ROOM_DEBUG
+//#define SINGLE_ROOM_DEBUG
 // This macro is used to check return value of rio_readnb and rio_readlineb
 // and when dealing with rio_readlineb n should be set to 0
 #define REC_BYTES_CHECK(A,B,msg) if((A)<(B)){pthread_mutex_lock(&mut_printf);fprintf(stderr,msg);pthread_mutex_unlock(&mut_printf);pthread_exit(NULL);}
