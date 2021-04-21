@@ -20,7 +20,7 @@
 #define N_M_SIZE (sizeof(net_match_status))
 #define N_F_SIZE (sizeof(net_flighter_status))
 #define PI 3.1415926
-#define RAND_ANGLE() ((((double)(rand()%4))/4.0)*PI)
+#define RAND_ANGLE() ((((double)(rand()%60))/60.0)*2*PI)
 // 4MB
 #define MATCH_RECORD_MAX_SIZE (1<<22)
 //#define DEBUG
@@ -1037,9 +1037,9 @@ void * room_thread(void * vargp){
 	for(i = 0; i < r_i_pt->size; i++){
 		f_s_pt = &((*(r_i_pt->clients+i)).fos->s);
 		rand_angle = RAND_ANGLE();
-		f_s_pt->x = (int32_t)100*1000*cos(rand_angle);
-		f_s_pt->y = (int32_t)100*1000*sin(rand_angle);
-		f_s_pt->z = 1000;
+		f_s_pt->x = (int32_t)400*1000*cos(rand_angle);
+		f_s_pt->y = (int32_t)400*1000*sin(rand_angle);
+		f_s_pt->z = 100*1000;
 		net_f_s.user_id = f_s_pt->user_id;
 		memcpy((char *)&(net_f_s.x),(char *)&(f_s_pt->x),sizeof(int32_t)*12);
 		net_f_s.loaded_weapon_types = 0;		
@@ -1051,9 +1051,9 @@ void * room_thread(void * vargp){
 	if(r_i_pt->match_type == 0){
 		net_f_s.user_id = tf_id;
 		rand_angle = RAND_ANGLE();
-		pack_pt->p.x = (int32_t)100*1000*cos(rand_angle);
-		pack_pt->p.y = (int32_t)100*1000*sin(rand_angle);
-		pack_pt->p.z = 1*1000;
+		pack_pt->p.x = (int32_t)400*1000*cos(rand_angle);
+		pack_pt->p.y = (int32_t)400*1000*sin(rand_angle);
+		pack_pt->p.z = 100*1000;
 		memcpy((char *)&(net_f_s.x),(char *)&(pack_pt->p.x),sizeof(int32_t)*12);
 		net_f_s.loaded_weapon_types = 0;
 		memcpy(buf+cursor,(char *)&net_f_s,sizeof(net_flighter_status));
