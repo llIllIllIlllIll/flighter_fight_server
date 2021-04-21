@@ -2,6 +2,8 @@
 #include "net.h"
 #include "ccr_rw_map.h"
 #include "ccr_counter.h"
+#include "cJSON.h"
+#include "cJSON_RoomStatus.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -68,6 +70,9 @@ int sserver_listenfd;
 
 // target_flighter AKA ba ji
 int tf_listenfd;
+
+// ui
+int ui_listenfd;
 // mutex& cond for flighter_server( or client?)
 pthread_mutex_t mut_tf;
 pthread_cond_t cond_tf;
@@ -75,7 +80,83 @@ pthread_cond_t cond_tf;
 // mutex protect STDOUT
 pthread_mutex_t mut_printf;
 
+// this thread is responsible of proviving monitor info to UI
+void * ui_thread(void * vargp){
+	int connfd;
+	struct sockaddr_storage clientaddr;
+	socklen_t clientlen;
+	rio_t rio;
+	size_t n;
+	char buf[MAXLINE];
+	int flags;
+	// json obj to return
+	cJSON * res_obj = NULL;
+	// json array of room_status
+	cJSON * room_status_s = NULL;
+	// single room_status
+	cJSON * room_status = NULL;
+	// room id 
+	uint64_t room_id = -1;
+	// room info addr
+	room_info *  r_i_pt = NULL;
+	// json string
+	char * json_string;
+	
+	connfd = -1;
 
+	printf("[UI_THREAD] start listening...\n");
+	while(connfd < 0){
+		clientlen = sizeof(struct sockaddr_storage);
+		connfd = accept(ui_listenfd,(SA *)&clientaddr,&clientlen);
+		pthread_mutex_lock(&mut_printf);
+		printf("[UI_THREAD] socket accepted\n");
+		pthread_mutex_unlock(&mut_printf);
+
+		// set fd to be nonblock
+		flags = fcntl(connfd,F_GETFL,0);
+		fcntl(connfd,F_SETFL,flags | O_NONBLOCK);
+		rio_readinitb(&rio,connfd);		
+
+		n = rio_readlineb(&rio,buf,MAXLINE);
+		if(n <= 0){
+			pthread_mutex_lock(&mut_printf);
+			printf("[UI_THREAD] ****************** timeout in reading url from web page *****************\n");
+			pthread_mutex_unlock(&mut_printf);
+		}
+		else{
+			pthread_mutex_lock(&mut_printf);
+			printf("[UI_THREAD] Request 1st line: %s",buf);
+			pthread_mutex_unlock(&mut_printf);
+		}
+		// headers
+		read_requesthdrs(&rio);
+		printf("[UI_THREAD]parsed all headers\n"); 
+
+
+		res_obj = cJSON_CreateObject();
+		room_status_s = cJSON_CreateArray();		
+		if(res_obj == NULL || room_status_s == NULL){
+			fprintf(stderr,"[UI_THREAD]********************* ERROR WHEN CREARING JSON OBJECT ********************\n");
+		}
+		// after read : write
+		// iterate over cmap_rid2rinfo
+		//printf("111\n");
+		while(ccr_rw_map_iterate(&cmap_rid2rinfo,&room_id,(uint64_t *)(&r_i_pt)) != 0){
+			//printf("[UI_THREAD] iterate room id : %d \n",r_i_pt->room_id);
+			room_status = create_room_status_JSON_obj(r_i_pt);
+			//printf("room_status_s : %lld room_statsu : %lld\n",room_status_s,room_status);
+			cJSON_AddItemToArray(room_status_s,room_status);
+		}
+		json_string = cJSON_Print(room_status_s);		
+
+		sprintf(buf,"HTTP/1.1 200 OK\r\nContext-Type:text/html\r\nServer: Flighter Fight Server\r\nAccess-Control-Allow-Origin:*\r\nContent-length: %d\r\nContent-type: html/text\r\n\r\n%s",strlen(json_string),json_string);
+		rio_writen(connfd,buf,strlen(buf));
+		close(connfd);
+		connfd = -1;
+		
+	}
+
+}
 
 // this thread communicates with Director Server and is capable of controlling process
 // in each room 
@@ -1345,14 +1426,15 @@ int main(int argc,char * argv[]){
 	socklen_t clientlen;
 	struct sockaddr_storage clientaddr;
 	pthread_t tid;
-	if(argc != 8){
-		fprintf(stderr,"usage: %s <port_for_roomserver> <port_for_clients> <port_for_director> <port_for_tf> <port_for_model_server> <max_rooms> <max_clients>\n",argv[0]);
+	if(argc != 9){
+		fprintf(stderr,"usage: %s <port_for_roomserver> <port_for_clients> <port_for_director> <port_for_tf> <port_for_model_server> <port_for_ui_web_page> <max_rooms> <max_clients>\n",argv[0]);
 		exit(1);
 	}
 	roomserver_listenfd = open_listenfd(argv[1]);
 	clients_listenfd = open_listenfd(argv[2]);
 	director_listenfd = open_listenfd(argv[3]);
 	tf_listenfd = open_listenfd(argv[4]);
+	ui_listenfd = open_listenfd(argv[6]);
 	if(S_SERVER_WORK){
 		sserver_listenfd = open_listenfd(argv[5]);
 		if(sserver_listenfd < 0){
@@ -1361,14 +1443,14 @@ int main(int argc,char * argv[]){
 		}
 	}
 
-	if(roomserver_listenfd < 0 || clients_listenfd < 0 || director_listenfd < 0 || tf_listenfd < 0){
+	if(roomserver_listenfd < 0 || clients_listenfd < 0 || director_listenfd < 0 || tf_listenfd < 0 || ui_listenfd < 0){
 		fprintf(stderr,"net error\n");
 		return -1;
 	}
 	srand(time(NULL));
 
-	max_rooms = atoi(argv[6]);
-	max_clients = atoi(argv[7]);
+	max_rooms = atoi(argv[7]);
+	max_clients = atoi(argv[8]);
 // In SINGLE_ROOM_DEBUG mode only one room can exist in order to avoid trouble
 #ifdef SINGLE_ROOM_DEBUG
 	max_rooms = 1;
@@ -1411,6 +1493,8 @@ int main(int argc,char * argv[]){
 	
 	pthread_create(&tid,NULL,connecting_target_flighter_thread,NULL);
 
+	// UI
+	pthread_create(&tid,NULL,ui_thread,NULL);
 	// process msgs from room server
 	while(1){
 		clientlen = sizeof(struct sockaddr_storage);
