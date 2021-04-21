@@ -1,3 +1,5 @@
+// 2021.3.20 added MAX_WAITING_MSEC into rio_readnb and rio_readlineb
+// among them added new return val for rio_readlineb: -2 means timeout
 # include <arpa/inet.h>
 # include <sys/socket.h>
 # include <sys/types.h>
@@ -11,10 +13,13 @@
 # include <stdlib.h>
 # include <pthread.h>
 # include <semaphore.h>
+# include <sys/time.h>
+# define TV_TO_MSEC(tv) (tv.tv_sec*1000+tv.tv_usec/1000)
 # define MAXLINE 128
 # define RIO_BUFSIZE 8192
 # define LISTENQ 1024
 # define LLL 60
+# define MAX_WAITING_MSEC (15*1000)
 typedef struct sockaddr SA;
 typedef struct {
     int rio_fd;
@@ -43,12 +48,19 @@ ssize_t rio_writen(int fd,void *usrbuf,size_t n){
     }
     return n;
 }
+// rio_read return val explanation:
+// -1: EAGAIN or such error
+// 0: EOF
+// positive: normal situation
 static ssize_t rio_read (rio_t *rp , char *usrbuf , size_t n) 
 { 
     int cnt;
     while(rp->rio_cnt <= 0){
         rp->rio_cnt = read(rp->rio_fd,rp->rio_buf,sizeof(rp->rio_buf));
-        if(rp->rio_cnt < 0){
+        //printf("rio_read read res: %d\n",rp->rio_cnt);
+	if(rp->rio_cnt < 0){
+	    // nonblock if no content
+	    // return EAGAIN
             if(errno != EINTR)
                 return -1;
         }
@@ -68,8 +80,12 @@ static ssize_t rio_read (rio_t *rp , char *usrbuf , size_t n)
     rp->rio_cnt -=cnt;
     return cnt;
 }
-ssize_t rio_readlineb(rio_t *rp,void *usrbuf,size_t maxlen){
+int rio_readlineb(rio_t *rp,void *usrbuf,size_t maxlen){
     int n,rc;
+    struct timeval tv;
+    long long start,current;
+    gettimeofday(&tv,NULL);
+    start = (long long)TV_TO_MSEC(tv);
     char c, *bufp = usrbuf;
     for(n= 1;n<maxlen;n++){
         if((rc = rio_read(rp,&c,1)) == 1){
@@ -79,16 +95,19 @@ ssize_t rio_readlineb(rio_t *rp,void *usrbuf,size_t maxlen){
                 break;
             }
         }
-        else if(rc == 0){
-            if(n == 1)
-                return 0;
+        else if(rc <= 0){
+	    gettimeofday(&tv,NULL);
+    	    current = (long long)TV_TO_MSEC(tv);
+	    if(current - start < MAX_WAITING_MSEC){
+	    	continue;
+	    }	    
             else 
-                break;
+	    {
+	    	*bufp = 0;
+		return -2;
+	    }
         }
-        else
-        {
-            return -1;
-        }
+        
     }
     *bufp = 0;
     return n-1;
@@ -96,12 +115,24 @@ ssize_t rio_readlineb(rio_t *rp,void *usrbuf,size_t maxlen){
 ssize_t rio_readnb(rio_t *rp, void *usrbuf, size_t n){
     size_t nleft = n;
     ssize_t nread;
+    struct timeval tv;
+    long long start,current;
     char * bufp = usrbuf;
+    gettimeofday(&tv,NULL);
+    start = TV_TO_MSEC(tv);
     while(nleft > 0){
-        if((nread = rio_read(rp,bufp,nleft))<0)
-            return -1;
-        else if(nread == 0)
-            break;
+        if((nread = rio_read(rp,bufp,nleft))<=0){
+	    gettimeofday(&tv,NULL);
+	    current = TV_TO_MSEC(tv);
+	    if(current - start < MAX_WAITING_MSEC){
+	    	//printf("%d \n",current-start);
+		continue;
+	    }
+	    else{
+		//printf("%d \n",current-start);
+	    	break;
+	    }
+	}
         nleft -= nread;
         bufp += nread;
     }

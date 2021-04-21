@@ -34,7 +34,7 @@ int main(int argc, char * argv []){
 		}
 		rio_readinitb(&rio,clientfd);
 		buf[0] = '\0';
-		sprintf(buf,"firstline\nabc\r\n\r\n%d %d 1 0 %d %d\n",roomid,clients_per_room,match_type,clients_per_room);
+		sprintf(buf,"firstline\nabc\r\n\r\n%d %d 1 0 %d %d %d\n",roomid,clients_per_room,match_type,clients_per_room,roomid);
 		for(j = 0; j < clients_per_room; j++){
 			sprintf(temp_buf,"%d %d localhost 1234 1 %d 1\n",clientid,clientid,clientid);
 			clientid++;
