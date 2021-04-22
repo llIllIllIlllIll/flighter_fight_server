@@ -118,3 +118,37 @@ int ccr_rw_map_iterate(ccr_rw_map * cmap,uint64_t * k, uint64_t * v){
 	// not last element in map
 	return 1;
 }
+int ccr_rw_map_delete(ccr_rw_map *cmap, uint64_t k){
+	int ret = pthread_rwlock_rdlock(&cmap->rwlock);
+	if(ret != 0){
+		fprintf(stderr,"Error when getting rdlock.\n");
+		return -2;
+	}
+	slot * cur_slot = cmap->slots[HASH(k)], * prev_slot = NULL;
+	if(cur_slot->key == k){
+		cmap->slots[HASH(k)] = cur_slot->next;
+		free(cur_slot);
+		// success
+		pthread_rwlock_unlock(&cmap->rwlock);
+		return 0;
+	}
+	prev_slot = cur_slot;
+	cur_slot = cur_slot->next;
+	while(cur_slot != NULL && cur_slot->key != k){
+		prev_slot = cur_slot;
+		cur_slot = cur_slot->next;
+	}
+	if(cur_slot == NULL){
+		// not found
+		pthread_rwlock_unlock(&cmap->rwlock);
+		return -1;
+	}
+	else{
+		// found
+		prev_slot->next = cur_slot->next;
+		free(cur_slot);
+		pthread_rwlock_unlock(&cmap->rwlock);
+		return 0;
+	}		
+	
+}

@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
+#include <assert.h>
 #define MOVE_AHEAD_IN_BUF(p) (strchr(p,' ')+1)
 #define S_SERVER_WORK 1
 #define TARGET_FLIGHTER_WORK 1
@@ -601,7 +602,8 @@ void * client_thread(void * vargp){
 	// first time connection client tells this server its id
 	n = rio_readnb(&rio,&net_f_o,sizeof(net_flighter_op));
 	// printf("******* return val: %d *************\n",n);
-
+	
+	//printf("only %d bytes received\n",n);
 	REC_BYTES_CHECK(n,sizeof(net_flighter_op),"****** E R R O R: timeout in first-time connecting to client ******\n");
 	
 	client_id = net_f_o.user_id;
@@ -621,6 +623,10 @@ void * client_thread(void * vargp){
 
 	c_i_pt = (client_info *)v;
 
+	// there are other client_threads that are trying to cover the same client_id 
+	while(c_i_pt->threads != 0);
+	c_i_pt->threads = 1;
+
 	while(c_i_pt->overall_status == NULL);
 	
 	rio_writen(connfd,c_i_pt->overall_status,c_i_pt->os_size);
@@ -633,11 +639,11 @@ void * client_thread(void * vargp){
 	f_s_pt = &(c_i_pt->fos->s);
 	
 	// XXX
-	f_s_pt->tic = 0;
+	// f_s_pt->tic = 0;
 	
 	f_o_pt = &(c_i_pt->fos->op);
 	cct_sync_clients_pt = c_i_pt->cct_sync_clients;
-	client_clock = 0;
+	client_clock = f_s_pt->tic;
 	room_clock_pt = c_i_pt->room_clock_p;
 	mut_room_pt = c_i_pt->mut_room_pt;
 	cond_room_pt = c_i_pt->cond_room_pt;
@@ -661,8 +667,18 @@ void * client_thread(void * vargp){
 	
 			printf("[CLIENT_THREAD id %d] ready to read op from client\n",c_i_pt->id);
 			n = rio_readnb(&rio,&net_f_o,sizeof(net_flighter_op));
-			printf("res : %d\n",n);
-			REC_BYTES_CHECK(n,sizeof(net_flighter_op),"****** E R R O R: timeout in reading op from client ******\n");
+			
+			if(n < sizeof(net_flighter_op)){
+				pthread_mutex_lock(&mut_printf);
+				printf("[CLIENT_THREAD id %d] ****** E R R O R: timeout in reading op from client, only received %d bytes, this thread will exist ******\n",client_id,n);
+				pthread_mutex_unlock(&mut_printf);
+			
+				c_i_pt->threads--;
+				pthread_exit(NULL);
+			}
+
+			//printf("res : %d\n",n);
+			//REC_BYTES_CHECK(n,sizeof(net_flighter_op),"****** E R R O R: timeout in reading op from client ******\n");
 			if(n != 0){
 				// operation
 				pthread_mutex_lock(&mut_printf);
@@ -996,7 +1012,9 @@ void * room_thread(void * vargp){
 	
 
 	// init room_clock
+	
 	room_clock = 0;
+	r_i_pt->tic = 0;
 	room_restart = 0;
 
 	// read room info from room server
@@ -1006,7 +1024,7 @@ void * room_thread(void * vargp){
 		n = rio_readlineb(&rio,buf,MAXLINE);
 	}
 	if(1){
-		REC_BYTES_CHECK(n,-1,"[ROOM_THREAD] ************* time out in reading fig info from room server **************\n");
+		REC_BYTES_CHECK(n,-1,"[ROOM_THREAD] ************* time out in reading room config info from room server **************\n");
 		// TODO: delete output
 		printf("[ROOM_THRAD] ready to receive official room content...\n");
 		printf("[buf content] [%d bytes]%s\n",strlen(buf),buf);
@@ -1035,6 +1053,14 @@ void * room_thread(void * vargp){
 		r_i_pt->cmap_fid2desct = &cmap_fid2desct;
 		// fid 0: target flighter 
 		ccr_rw_map_insert(&cmap_fid2desct,0,0);
+
+		// room duplicity check
+		while(ccr_rw_map_query(&cmap_rid2rinfo,r_i_pt->room_id,&v) != -1){
+			//printf("room not deleted!!!\n");
+			//XXX: this room_thread cannot go on because last room of this id has not been deleted
+		}
+		//printf("FUCK!!!\n");
+
 		for(i = 0; i < r_i_pt->size; i++){
 			if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
 				// TODO: delete output
@@ -1084,6 +1110,9 @@ void * room_thread(void * vargp){
 				(*(r_i_pt->clients+i)).overall_status = NULL;
 				// init: 0
 				(*(r_i_pt->clients+i)).cmap_fid2desct = &cmap_fid2desct;
+				// init : 0
+				(*(r_i_pt->clients+i)).threads = 0;
+
 				ccr_rw_map_insert(&cmap_fid2desct,(*(r_i_pt->clients+i)).flighter_id,0);
 			}
 			else{
@@ -1333,6 +1362,9 @@ void * room_thread(void * vargp){
 			if(ccr_ct_dec(&cct_rooms) != 0){
 				exit(-1);
 			}
+					
+			assert(ccr_rw_map_delete(&cmap_rid2rinfo,r_i_pt->room_id) == 0);
+			//assert(0);
 			pthread_exit(NULL);
 		}
 		cursor = 0;
@@ -1395,6 +1427,7 @@ void * room_thread(void * vargp){
 		// when room_clock moves on notify all clients to move on
 		pthread_mutex_lock(&mut_clients);
 		room_clock++;
+		r_i_pt->tic = room_clock;
 		pthread_cond_broadcast(&cond_clients);
 		pthread_mutex_unlock(&mut_clients);
 

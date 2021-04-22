@@ -13,6 +13,9 @@ cJSON * create_room_status_JSON_obj(room_info * r_i_pt){
 		return NULL;
 	if(cJSON_AddNumberToObject(room_status,"steplength",r_i_pt->simulation_steplength) == NULL)
 		return NULL;
+	if(cJSON_AddNumberToObject(room_status,"tic",r_i_pt->tic) == NULL)
+		return NULL;
+
 	if((clients = cJSON_AddArrayToObject(room_status,"clients")) == NULL){
 		return NULL;
 	}
