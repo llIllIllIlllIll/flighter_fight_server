@@ -808,6 +808,18 @@ void * client_thread(void * vargp){
 			while(client_clock != *room_clock_pt){
 				// wait for room_thread's clock to go on
 				pthread_cond_wait(cond_clients_pt,mut_clients_pt);	
+				// check if the room has timed out
+				if(ccr_rw_map_query(&cmap_cid2cinfo,c_i_pt->id,&v) == -1){
+					pthread_mutex_lock(&mut_printf);
+					printf("[CLIENT_THREAD id %d] room timeout, client thread exist\n",c_i_pt->id);
+					pthread_mutex_unlock(&mut_printf);
+
+					if(ccr_ct_dec(&cct_clients) != 0){
+						exit(-1);
+					}
+					pthread_exit(NULL);
+
+				}
 			}
 			pthread_mutex_unlock(mut_clients_pt);
 
@@ -934,7 +946,7 @@ void * room_thread(void * vargp){
 	struct timeval tv;
 	struct timespec ts;
 	long long start,current;
-	int room_restart;	
+	//int room_restart;	
 	double rand_angle;
 
 #ifdef SINGLE_ROOM_DEBUG
@@ -949,7 +961,7 @@ void * room_thread(void * vargp){
 	net_weapon_status net_w_s;	
 	int cursor;
 	int flags;
-	int to_ct;
+	//int to_ct;
 	// mutex and cond for clients to wake up this room:
 	// i.e. to info this room that one of the clients has been ready
 	pthread_mutex_t mut_room;
@@ -1007,7 +1019,7 @@ void * room_thread(void * vargp){
 	printf("[ROOM_THREAD]parsed all headers\n"); 
 	char * res_content = "HTTP/1.0 200 OK\r\nServer: Flighter Fight Server\r\nContent-length: 2\r\nContent-type: html/text\r\n\r\nOK";
 	
-	to_ct = 0;
+	//to_ct = 0;
 	/*if((n = rio_readlineb(&rio,buf,MAXLINE)) > 0){
 		pthread_mutex_lock(&mut_printf);
 		printf("%s\n",buf);
@@ -1020,7 +1032,7 @@ void * room_thread(void * vargp){
 	
 	room_clock = 0;
 	r_i_pt->tic = 0;
-	room_restart = 0;
+	//room_restart = 0;
 
 	// read room info from room server
 	// just basic configurations
@@ -1202,8 +1214,29 @@ void * room_thread(void * vargp){
 			gettimeofday(&tv,NULL);
 			current = TV_TO_MSEC(tv);
 			if(current - start > ROOM_MAX_WAITING_MSEC){
-				room_restart = 1;
-				to_ct++;
+				// room waiting timeout: delete room info from cmap_rid2rinfo
+				// delete corresponding client info from cmap_cid2cinfo
+				// delete this room thread
+				pthread_mutex_lock(&mut_printf);
+				printf("[ROOM_THREAD id %d] room timeout; thread exit\n",r_i_pt->room_id);
+				pthread_mutex_unlock(&mut_printf);
+				delete_room_from_cmap(&cmap_rid2rinfo,&cmap_cid2cinfo,r_i_pt);
+				// wake up clients
+				pthread_mutex_lock(&mut_clients);
+				pthread_cond_broadcast(&cond_clients);
+				pthread_mutex_unlock(&mut_clients);
+				ccr_ct_reset(&cct_sync_clients);
+			
+				if(ccr_ct_dec(&cct_rooms) != 0){
+					exit(-1);
+				}
+					
+				assert(ccr_rw_map_query(&cmap_rid2rinfo,r_i_pt->room_id,&v) == -1);
+				//assert(0);
+				pthread_exit(NULL);
+
+				//room_restart = 1;
+				//to_ct++;
 				break;
 			}	
 
@@ -1214,7 +1247,7 @@ void * room_thread(void * vargp){
 		}
 		pthread_mutex_unlock(&mut_room);
 	
-		if(room_restart == 1){
+		/*if(room_restart == 1){
 			room_clock = 0;
 			if(to_ct == 1){
 				pthread_mutex_lock(&mut_printf);
@@ -1224,9 +1257,9 @@ void * room_thread(void * vargp){
 			}
 			room_restart = 0;
 			continue;		
-		}		
+		}*/		
 
-		to_ct = 0;
+		//to_ct = 0;
 		pthread_mutex_lock(&mut_printf);
 		printf("[ROOM_THREAAD id %d] room sync accomplished clock %d\n",r_i_pt->room_id,room_clock);
 		pthread_mutex_unlock(&mut_printf);

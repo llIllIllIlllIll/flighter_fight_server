@@ -279,5 +279,8 @@ typedef struct _daotiaotai_signal{
 	uint32_t reload_flighters_n;
 } daotiaotai_signal;
 
+// Function: delete a room info (including all the corresponding clients) from their cmap
+void delete_room_from_cmap(ccr_rw_map * cmap_rid2rinfo,ccr_rw_map * cmap_cid2cinfo, room_info * r_i_pt);
+
 
 #endif

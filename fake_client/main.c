@@ -68,6 +68,10 @@ void * fake_client_thread(void * vargs){
 				rio_writen(clientfd,&net_d_f,sizeof(net_destroyed_flighter));
 			}
 			else{
+				// test 1 client disconnected
+				if(i > 15 && (local_clientid % 2)){
+					continue;
+				}
 				rio_writen(clientfd,&net_f_o,sizeof(net_flighter_op));
 			}
 			

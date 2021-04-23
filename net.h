@@ -226,10 +226,10 @@ int sbuf_remove(sbuf_t * sp){
 void read_requesthdrs(rio_t * rp){
 	char buf[MAXLINE];
 	rio_readlineb(rp,buf,MAXLINE);
-	printf("header line:%s",buf);
+	//printf("header line:%s",buf);
 	while(strcmp(buf,"\r\n")){
 		rio_readlineb(rp,buf,MAXLINE);		
-		printf("header line:%s",buf);
+		//printf("header line:%s",buf);
 		//buf[0] = 0;
 	}
 	return;
