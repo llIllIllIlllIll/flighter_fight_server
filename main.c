@@ -819,7 +819,12 @@ void * client_thread(void * vargp){
 			rio_writen(connfd,c_i_pt->overall_status,c_i_pt->os_size);
 			// TODO: end of game
 
-			if(((net_match_status *)c_i_pt->overall_status)->timestamp == -1){				
+			if(((net_match_status *)c_i_pt->overall_status)->timestamp == -1 || ((net_match_status *)c_i_pt->overall_status)->winner_group != 0){				
+				
+				pthread_mutex_lock(&mut_printf);
+				printf("[CLIENT_THREAD id %d] game end ; winner group %d; timestamp %d;thread will exist\n",c_i_pt->id,((net_match_status *)c_i_pt->overall_status)->winner_group,((net_match_status *)c_i_pt->overall_status)->timestamp);
+				pthread_mutex_unlock(&mut_printf);
+
 				break;
 			}
 #ifdef SINGLE_ROOM_DEBUG
@@ -1331,24 +1336,26 @@ void * room_thread(void * vargp){
 			net_m_s.flighters_n = 0;
 			net_m_s.weapons_n = 0;
 			net_m_s.winner_group = alive_group_id;
-			strncpy(buf,(char *)&net_m_s,sizeof(net_match_status));	
+			memcpy(buf,(char *)&net_m_s,sizeof(net_match_status));	
 			for(i = 0; i < r_i_pt->size; i++){
 				(r_i_pt->clients+i)->overall_status = buf;
 				(r_i_pt->clients+i)->os_size = sizeof(net_match_status);
 			}
 			// record
-			memcpy(match_record+mr_cursor,buf,cursor);
-			mr_cursor += cursor;				
+			memcpy(match_record+mr_cursor,buf,sizeof(net_match_status));
+			mr_cursor += sizeof(net_match_status);				
 			// TODO: write to local fS	
-			sprintf(buf,"./match_records/match_type%d_id%d.rec",r_i_pt->match_type,r_i_pt->match_id);
-			mr_fd = open(buf,O_WRONLY|O_CREAT,0644);
+			sprintf(temp_buf,"./match_records/match_type%d_id%d.rec",r_i_pt->match_type,r_i_pt->match_id);
+			mr_fd = open(temp_buf,O_WRONLY|O_CREAT,0644);
 			rio_writen(mr_fd,match_record,mr_cursor);
 			close(mr_fd);
 
 			pthread_mutex_lock(&mut_printf);
-			printf("[ROOM_THREAAD id %d] [GAME id %d]room status of clock %d:\n #### Group %d has won! Game over ####\n",r_i_pt->room_id,r_i_pt->match_id,room_clock,alive_group_id);
+			printf("[ROOM_THREAAD id %d] [GAME id %d]room status of clock %d:\n #### Group %d has won! Game over ####\n",r_i_pt->room_id,r_i_pt->match_id,((net_match_status *)buf)->timestamp,((net_match_status *)buf)->winner_group);
 			pthread_mutex_unlock(&mut_printf);
-				
+			
+			// wait clients
+			sleep(3);		
 			
 
 			// when room_clock moves on notify all clients to move on
