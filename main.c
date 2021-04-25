@@ -1393,31 +1393,52 @@ void * room_thread(void * vargp){
 	cursor = sizeof(net_match_status);	
 	//printf("HS!\n");
 	// TODO: loaded_weapon_types
-	for(i = 0; i < r_i_pt->size; i++){
-		f_s_pt = &((*(r_i_pt->clients+i)).fos->s);
-		rand_angle = RAND_ANGLE();
-		f_s_pt->x = (int32_t)400*1000*cos(rand_angle);
-		f_s_pt->y = (int32_t)400*1000*sin(rand_angle);
-		f_s_pt->z = 100*1000;
+	if(r_i_pt->match_type == 0){
+		assert(r_i_pt->size == 1);
+		net_f_s.user_id = tf_id;
+		pack_pt->p.x = -163.8*1000;
+		pack_pt->p.y = -161.379*1000;
+		pack_pt->p.z = 31.647*1000;
+		pack_pt->p.u = 0;
+		pack_pt->p.v = 0;
+		pack_pt->p.w = -180*1000;
+		memcpy((char *)&(net_f_s.x),(char *)&(pack_pt->p.x),sizeof(int32_t)*12);
+		net_f_s.loaded_weapon_types = 0;
+		memcpy(buf+cursor,(char *)&net_f_s,sizeof(net_flighter_status));
+		cursor += sizeof(net_flighter_status);
+		// 1 client
+		f_s_pt = &((*(r_i_pt->clients)).fos->s);
+		f_s_pt->x = 163.8*1000;
+		f_s_pt->y = 161.379*1000;
+		f_s_pt->z = 31.647*1000;
+		f_s_pt->u = 0;
+		f_s_pt->v = 0;
+		f_s_pt->w = 0;
 		net_f_s.user_id = f_s_pt->user_id;
 		memcpy((char *)&(net_f_s.x),(char *)&(f_s_pt->x),sizeof(int32_t)*12);
 		net_f_s.loaded_weapon_types = 0;		
 		memcpy(buf+cursor,(char *)&net_f_s,sizeof(net_flighter_status));
 		cursor += sizeof(net_flighter_status);
-		//printf("DS!\n");
 	}
-	// practise mode: add target_flighter
-	if(r_i_pt->match_type == 0){
-		net_f_s.user_id = tf_id;
-		rand_angle = RAND_ANGLE();
-		pack_pt->p.x = (int32_t)400*1000*cos(rand_angle);
-		pack_pt->p.y = (int32_t)400*1000*sin(rand_angle);
-		pack_pt->p.z = 100*1000;
-		memcpy((char *)&(net_f_s.x),(char *)&(pack_pt->p.x),sizeof(int32_t)*12);
-		net_f_s.loaded_weapon_types = 0;
-		memcpy(buf+cursor,(char *)&net_f_s,sizeof(net_flighter_status));
-		cursor += sizeof(net_flighter_status);
-		//printf("HC..\n");
+	else{
+		assert(r_i_pt->size == 2);
+		int smaller = 1;
+		if((*(r_i_pt->clients)).id < (*(r_i_pt->clients+1).id)){
+			smaller = -1;
+		}
+		for( i = 0; i < r_i_pt->size;i++){
+			f_s_pt->x = smaller*163.8*1000;
+			f_s_pt->y = smaller*161.379*1000;
+			f_s_pt->z = 31.647*1000;
+			f_s_pt->u = 0;
+			f_s_pt->v = 0;
+			f_s_pt->w = smaller == -1? -180*1000 : 0;		
+			net_f_s.user_id = f_s_pt->user_id;
+			memcpy((char *)&(net_f_s.x),(char *)&(f_s_pt->x),sizeof(int32_t)*12);
+			net_f_s.loaded_weapon_types = 0;		
+			memcpy(buf+cursor,(char *)&net_f_s,sizeof(net_flighter_status));
+			cursor += sizeof(net_flighter_status);
+		}
 	}
 	// TODO: set start position properly & give it to each client
 	for(i = 0; i < r_i_pt->size;i++){
