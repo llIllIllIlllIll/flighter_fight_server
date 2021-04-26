@@ -109,9 +109,9 @@ void * ui_thread(void * vargp){
 	while(connfd < 0){
 		clientlen = sizeof(struct sockaddr_storage);
 		connfd = accept(ui_listenfd,(SA *)&clientaddr,&clientlen);
-		pthread_mutex_lock(&mut_printf);
-		printf("[UI_THREAD] socket accepted\n");
-		pthread_mutex_unlock(&mut_printf);
+		//pthread_mutex_lock(&mut_printf);
+		//printf("[UI_THREAD] socket accepted\n");
+		//pthread_mutex_unlock(&mut_printf);
 
 		// set fd to be nonblock
 		flags = fcntl(connfd,F_GETFL,0);
@@ -120,18 +120,18 @@ void * ui_thread(void * vargp){
 
 		n = rio_readlineb(&rio,buf,MAXLINE);
 		if(n <= 0){
-			pthread_mutex_lock(&mut_printf);
-			printf("[UI_THREAD] ****************** timeout in reading url from web page *****************\n");
-			pthread_mutex_unlock(&mut_printf);
+			//pthread_mutex_lock(&mut_printf);
+			//printf("[UI_THREAD] ****************** timeout in reading url from web page *****************\n");
+			//pthread_mutex_unlock(&mut_printf);
 		}
 		else{
-			pthread_mutex_lock(&mut_printf);
-			printf("[UI_THREAD] Request 1st line: %s",buf);
-			pthread_mutex_unlock(&mut_printf);
+			//pthread_mutex_lock(&mut_printf);
+			//printf("[UI_THREAD] Request 1st line: %s",buf);
+			//pthread_mutex_unlock(&mut_printf);
 		}
 		// headers
 		read_requesthdrs(&rio);
-		printf("[UI_THREAD]parsed all headers\n"); 
+		//printf("[UI_THREAD]parsed all headers\n"); 
 
 
 		res_obj = cJSON_CreateObject();
@@ -256,7 +256,7 @@ void * connecting_target_flighter_thread(void * vargp){
 	role = (socket_role *)malloc(sizeof(socket_role));
 
 	pthread_detach(pthread_self());
-
+restart_tf_thread:
 	connfd = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
 	printf("[TF_THREAD]first socket accepted\n");
 	
@@ -266,8 +266,10 @@ void * connecting_target_flighter_thread(void * vargp){
 
 	rio_readinitb(&rio,connfd);
 	rec_bytes = rio_readnb(&rio,role,sizeof(socket_role));
-	REC_BYTES_CHECK(rec_bytes,sizeof(socket_role),"****** E R R O R: timeout in connecting to target flighter server ******\n");
-
+	if(rec_bytes < sizeof(socket_role)){
+		printf("****** E R R O R: timeout in connecting to target flighter server ******\nrestart connecting_tf_thread\n");
+		goto restart_tf_thread;
+	}
 	
 	printf("first socket role connected\n");
 	if(role->type == ROLE_SEND){
@@ -301,7 +303,10 @@ void * connecting_target_flighter_thread(void * vargp){
 		pthread_mutex_unlock(&mut_printf);
 		pthread_exit(NULL);
 	}
-	REC_BYTES_CHECK(rec_bytes,sizeof(socket_role),"****** E R R O R: timeout in connecting to target flighter server ******\n");
+	if(rec_bytes < sizeof(socket_role)){
+		printf("****** E R R O R: timeout in connecting to target flighter server ******\nrestart connecting_tf_thread\n");
+		goto restart_tf_thread;
+	}
 
 	// rio for received data only 
 	rio_readinitb(&rio,connfd_rec);
@@ -326,7 +331,13 @@ void * connecting_target_flighter_thread(void * vargp){
 		rio_writen(connfd_sen,(char *)ready_pack_pt,sizeof(s_server_pack));
 		
 		rec_bytes = rio_readnb(&rio,(char *)&(ready_pack_pt->p),sizeof(posture));
-		REC_BYTES_CHECK(rec_bytes,sizeof(posture),"****** E R R O R: timeout in reading posture from target flighter server ******\n");
+		if(rec_bytes < sizeof(posture)){
+			printf("****** E R R O R: timeout in reading posture from target flighter server *******\n restart connecting_tf_thread\n");
+			pthread_cond_broadcast(&cond_tf);
+			pthread_mutex_unlock(&mut_tf);
+			goto restart_tf_thread;
+		}
+		//REC_BYTES_CHECK(rec_bytes,sizeof(posture),"****** E R R O R: timeout in reading posture from target flighter server ******\n");
 
 		pthread_mutex_lock(&mut_printf);
 		printf("[TF_THREAD] new posture: %d %d %d %d %d %d %d %d %d %d %d %d\n",ready_pack_pt->p.x,ready_pack_pt->p.y,ready_pack_pt->p.z,
@@ -370,7 +381,7 @@ void * connecting_s_server_thread(void * vargp){
 	role = (socket_role *)malloc(sizeof(socket_role));	
 
 	clientlen = sizeof(struct sockaddr_storage);
-
+restart_s_server_thread:
 
 	if(S_SERVER_WORK){
 		connfd = accept(sserver_listenfd,(SA *)&clientaddr,&clientlen);
@@ -382,7 +393,12 @@ void * connecting_s_server_thread(void * vargp){
 
 		rio_readinitb(&rio,connfd);
 		rec_bytes = rio_readnb(&rio,role,sizeof(socket_role));
-		REC_BYTES_CHECK(rec_bytes,sizeof(socket_role),"****** E R R O R: timeout in connecting to s server ******\n");
+		if(rec_bytes < sizeof(socket_role)){
+			printf("****** E R R O R: timeout in connecting to simulink server ******\nrestart connecting_s_server_thread\n");
+			goto restart_s_server_thread;
+		}
+
+		//REC_BYTES_CHECK(rec_bytes,sizeof(socket_role),"****** E R R O R: timeout in connecting to s server ******\n");
 		if(role->type == ROLE_SEND){
 			connfd_sen = connfd;
 			connfd = accept(sserver_listenfd,(SA *)&clientaddr,&clientlen);
@@ -413,7 +429,10 @@ void * connecting_s_server_thread(void * vargp){
 			pthread_mutex_unlock(&mut_printf);
 			pthread_exit(NULL);
 		}
-		REC_BYTES_CHECK(rec_bytes,sizeof(socket_role),"****** E R R O R: timeout in connecting to s server ******\n");
+		if(rec_bytes < sizeof(socket_role)){
+			printf("****** E R R O R: timeout in connecting to simulink server ******\nrestart connecting_s_server_thread\n");
+			goto restart_s_server_thread;
+		}
 		rio_readinitb(&rio,connfd_rec);
 	}
 
@@ -470,7 +489,14 @@ void * connecting_s_server_thread(void * vargp){
 			pthread_mutex_unlock(&mut_printf);
 
 			rec_bytes = rio_readnb(&rio,(char *)&(pack_pt->p),sizeof(posture));
-			REC_BYTES_CHECK(rec_bytes,sizeof(posture),"****** E R R O R: timeout in reading posture from s server ******\n");
+			if(rec_bytes < sizeof(posture)){
+				printf("****** E R R O R: timeout in reading posture from simulink server *******\n restart connecting_s_server_thread\n");
+				pthread_cond_broadcast(&cond_s_server);
+				pthread_mutex_unlock(&mut_s_server);
+				goto restart_s_server_thread;
+			}
+
+			//REC_BYTES_CHECK(rec_bytes,sizeof(posture),"****** E R R O R: timeout in reading posture from s server ******\n");
 			
 #ifdef SINGLE_ROOM_DEBUG
 	gettimeofday(&srd_tv,NULL);
