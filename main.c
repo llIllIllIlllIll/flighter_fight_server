@@ -11,11 +11,11 @@
 #include <assert.h>
 #define MOVE_AHEAD_IN_BUF(p) (strchr(p,' ')+1)
 #define S_SERVER_WORK 1
-#define TARGET_FLIGHTER_WORK 0
+#define TARGET_FLIGHTER_WORK 1
 // This macro is defined in 2021.4.20:
 // When two clients participate in a match togetehr the game process moves surprisingly slow
 // and I need to use a timer to find the bottleneck
-#define SINGLE_ROOM_DEBUG
+//#define SINGLE_ROOM_DEBUG
 // This macro is used to check return value of rio_readnb and rio_readlineb
 // and when dealing with rio_readlineb n should be set to 0
 #define REC_BYTES_CHECK(A,B,msg) if((A)<(B)){pthread_mutex_lock(&mut_printf);fprintf(stderr,msg);pthread_mutex_unlock(&mut_printf);pthread_exit(NULL);}
@@ -1089,10 +1089,7 @@ void * room_thread(void * vargp){
 	// read room info from room server
 	// just basic configurations
 	n = rio_readlineb(&rio,buf,MAXLINE);
-	while(n < 5){
-		n = rio_readlineb(&rio,buf,MAXLINE);
-	}
-	if(1){
+	if(n != 0){
 		REC_BYTES_CHECK(n,-1,"[ROOM_THREAD] ************* time out in reading room config info from room server **************\n");
 		// TODO: delete output
 		printf("[ROOM_THRAD] ready to receive official room content...\n");
@@ -1624,6 +1621,7 @@ int main(int argc,char * argv[]){
 	while(1){
 		clientlen = sizeof(struct sockaddr_storage);
 		connfd = accept(roomserver_listenfd,(SA *)&clientaddr,&clientlen);
+		//printf("12345 %d %d\n",connfd,max_rooms);
 		sbuf_insert(&sbuf_for_room_server,connfd);
 		if(ccr_ct_query(&cct_rooms,&v) != 0){
 			exit(-1);
