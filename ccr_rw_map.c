@@ -7,9 +7,12 @@ int ccr_rw_map_init(ccr_rw_map * cmap){
 		return -1;
 	}
 	//cmap->rwlock = PTHREAD_RWLOCK_INITIALIZER;
-	for(i = 0; i < 100; i++){
+	for(i = 0; i < SLOTS; i++){
 		cmap->slots[i] = NULL;
 	}
+
+	cmap->cur_slot_n = 0;
+	cmap->cur_slot_pt = NULL;
 	return 0;
 }
 int ccr_rw_map_insert(ccr_rw_map * cmap,uint64_t k,uint64_t v){
@@ -79,4 +82,73 @@ int ccr_rw_map_query(ccr_rw_map * cmap,uint64_t k,uint64_t * v){
 	pthread_rwlock_unlock(&cmap->rwlock);
 	return -1;
 }
+int ccr_rw_map_iterate(ccr_rw_map * cmap,uint64_t * k, uint64_t * v){
+	int ret = pthread_rwlock_rdlock(&cmap->rwlock);
+	if(ret != 0){
+		fprintf(stderr,"Error when getting rdlock.\n");
+		return -2;
+	}
+	if(cmap->cur_slot_pt != NULL){
+		cmap->cur_slot_pt = cmap->cur_slot_pt->next;
+		if(cmap->cur_slot_pt == NULL){
+			cmap->cur_slot_n ++;
+		}
+		if(cmap->cur_slot_n == SLOTS){
+			cmap->cur_slot_n = 0;
+			pthread_rwlock_unlock(&cmap->rwlock);
+			return 0;
+		}
+	}
 
+	if(cmap->cur_slot_pt == NULL){
+		while(cmap->slots[cmap->cur_slot_n] == NULL){
+			cmap->cur_slot_n++;
+			if(cmap->cur_slot_n == SLOTS){
+				cmap->cur_slot_n = 0;
+				pthread_rwlock_unlock(&cmap->rwlock);
+				return 0;
+			}
+		}
+		cmap->cur_slot_pt = cmap->slots[cmap->cur_slot_n];
+	}
+	
+	*k = cmap->cur_slot_pt->key;
+	*v = cmap->cur_slot_pt->val;
+	pthread_rwlock_unlock(&cmap->rwlock);
+	// not last element in map
+	return 1;
+}
+int ccr_rw_map_delete(ccr_rw_map *cmap, uint64_t k){
+	int ret = pthread_rwlock_rdlock(&cmap->rwlock);
+	if(ret != 0){
+		fprintf(stderr,"Error when getting rdlock.\n");
+		return -2;
+	}
+	slot * cur_slot = cmap->slots[HASH(k)], * prev_slot = NULL;
+	if(cur_slot->key == k){
+		cmap->slots[HASH(k)] = cur_slot->next;
+		free(cur_slot);
+		// success
+		pthread_rwlock_unlock(&cmap->rwlock);
+		return 0;
+	}
+	prev_slot = cur_slot;
+	cur_slot = cur_slot->next;
+	while(cur_slot != NULL && cur_slot->key != k){
+		prev_slot = cur_slot;
+		cur_slot = cur_slot->next;
+	}
+	if(cur_slot == NULL){
+		// not found
+		pthread_rwlock_unlock(&cmap->rwlock);
+		return -1;
+	}
+	else{
+		// found
+		prev_slot->next = cur_slot->next;
+		free(cur_slot);
+		pthread_rwlock_unlock(&cmap->rwlock);
+		return 0;
+	}		
+	
+}

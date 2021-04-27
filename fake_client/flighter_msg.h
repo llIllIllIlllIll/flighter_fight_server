@@ -13,6 +13,7 @@
 // flight operation: sent by clients to this server
 // launch_weapon: 0 no 1 launch a missile 2 shoot a bullet 3 both
 typedef struct _flighter_op{
+	int32_t user_id;
 	uint32_t tic;
 	// fu yang
 	int32_t pitch;
@@ -41,6 +42,20 @@ typedef struct _posture{
 	int32_t vv;
 	int32_t vw;
 } posture;
+
+typedef struct _operation{
+	int32_t pitch;
+	int32_t roll;
+	int32_t dir;
+	int32_t acc;
+	int32_t launch_weapon;
+} operation;
+// pack only for communication with simulink
+typedef struct _s_server_pack{
+	posture p;
+	operation o;
+} s_server_pack;
+
 typedef struct _socket_role{
 	int32_t id;
 	int32_t type; // 0 send 1 recv 
@@ -56,6 +71,8 @@ typedef struct _destroyed_flighter_ids{
 typedef struct _net_flighter_op{
 	int32_t user_id;
 	int32_t timestamp;
+	// 0 AI 1 keyboard
+	int32_t control_method;
 	int32_t op_pitch;
 	int32_t op_roll;
 	int32_t op_dir;
@@ -194,6 +211,8 @@ typedef struct _client_info{
 	uint32_t sign;
 	uint32_t flighter_id;
 	uint32_t flighter_type;
+	// how many client_threads are responsible for this one?
+	uint32_t threads;
 	// a pointer to this client's flight
 	flighter_op_and_status * fos;
 	// a pointer to this room's sync counter
@@ -206,9 +225,11 @@ typedef struct _client_info{
 	// mutex & cond for room_thread to wake up its client_thread s
 	pthread_mutex_t * mut_clients_pt;
 	pthread_cond_t * cond_clients_pt;
-	
-	// status of all flighters that should be sent back to each client
+
+	// status of all flighters that should be sent to each client
 	char * overall_status;
+	// sizeof overall_status
+	uint32_t os_size;
 	// cmap <flighter_id,number_of_clients_sentence_it_to_death>
 	ccr_rw_map * cmap_fid2desct;
 } client_info;
@@ -223,10 +244,14 @@ typedef struct _client_info{
 // size: number of current clients
 typedef struct _room_info{
 	uint32_t room_id;
+	uint32_t match_id;
 	uint32_t room_size;
 	uint32_t simulation_steplength;
 	uint32_t env_id;
 	uint32_t match_type;
+	uint32_t tic;
+	// avoid duplicity
+	uint32_t threads;
 	client_info * clients;
 	uint32_t size;
 	// status is used when a Director decides to pause a room's progress

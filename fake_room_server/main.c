@@ -43,7 +43,7 @@ int main(int argc, char * argv []){
 		printf("room %d ready to write... content:\n%s\n",i,buf);
 		rio_writen(clientfd,buf,strlen(buf));
 		close(clientfd);
-		sleep(1);
+		//sleep(3);
 		roomid++;
 	}
 
