@@ -15,11 +15,11 @@
 # include <semaphore.h>
 # include <sys/time.h>
 # define TV_TO_MSEC(tv) (tv.tv_sec*1000+tv.tv_usec/1000)
-# define MAXLINE 128
+# define MAXLINE (1024*1024)
 # define RIO_BUFSIZE 8192
 # define LISTENQ 1024
 # define LLL 60
-# define MAX_WAITING_MSEC (15*1000)
+# define DEFAULT_MAX_WAITING_MSEC (15*1000)
 typedef struct sockaddr SA;
 typedef struct {
     int rio_fd;
@@ -98,7 +98,7 @@ int rio_readlineb(rio_t *rp,void *usrbuf,size_t maxlen){
         else if(rc <= 0){
 	    gettimeofday(&tv,NULL);
     	    current = (long long)TV_TO_MSEC(tv);
-	    if(current - start < MAX_WAITING_MSEC){
+	    if(current - start < DEFAULT_MAX_WAITING_MSEC){
 	    	continue;
 	    }	    
             else 
@@ -112,11 +112,12 @@ int rio_readlineb(rio_t *rp,void *usrbuf,size_t maxlen){
     *bufp = 0;
     return n-1;
 }
-ssize_t rio_readnb(rio_t *rp, void *usrbuf, size_t n){
+ssize_t rio_readnb(rio_t *rp, void *usrbuf, size_t n, long long max_waiting_msec){
     size_t nleft = n;
     ssize_t nread;
     struct timeval tv;
     long long start,current;
+    max_waiting_msec = (max_waiting_msec == 0) ? (DEFAULT_MAX_WAITING_MSEC) : (max_waiting_msec);
     char * bufp = usrbuf;
     gettimeofday(&tv,NULL);
     start = TV_TO_MSEC(tv);
@@ -124,7 +125,7 @@ ssize_t rio_readnb(rio_t *rp, void *usrbuf, size_t n){
         if((nread = rio_read(rp,bufp,nleft))<=0){
 	    gettimeofday(&tv,NULL);
 	    current = TV_TO_MSEC(tv);
-	    if(current - start < MAX_WAITING_MSEC){
+	    if(current - start < max_waiting_msec){
 	    	//printf("%d \n",current-start);
 		continue;
 	    }
@@ -226,10 +227,10 @@ int sbuf_remove(sbuf_t * sp){
 void read_requesthdrs(rio_t * rp){
 	char buf[MAXLINE];
 	rio_readlineb(rp,buf,MAXLINE);
-	printf("header line:%s",buf);
+	//printf("header line:%s",buf);
 	while(strcmp(buf,"\r\n")){
 		rio_readlineb(rp,buf,MAXLINE);		
-		printf("header line:%s",buf);
+		//printf("header line:%s",buf);
 		//buf[0] = 0;
 	}
 	return;

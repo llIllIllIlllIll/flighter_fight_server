@@ -211,8 +211,6 @@ typedef struct _client_info{
 	uint32_t sign;
 	uint32_t flighter_id;
 	uint32_t flighter_type;
-	// how many client_threads are responsible for this one?
-	uint32_t threads;
 	// a pointer to this client's flight
 	flighter_op_and_status * fos;
 	// a pointer to this room's sync counter
@@ -249,9 +247,6 @@ typedef struct _room_info{
 	uint32_t simulation_steplength;
 	uint32_t env_id;
 	uint32_t match_type;
-	uint32_t tic;
-	// avoid duplicity
-	uint32_t threads;
 	client_info * clients;
 	uint32_t size;
 	// status is used when a Director decides to pause a room's progress

@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
+#include <assert.h>
 #define MOVE_AHEAD_IN_BUF(p) (strchr(p,' ')+1)
 #define S_SERVER_WORK 1
 #define TARGET_FLIGHTER_WORK 1
@@ -18,7 +19,7 @@
 // This macro is used to check return value of rio_readnb and rio_readlineb
 // and when dealing with rio_readlineb n should be set to 0
 #define REC_BYTES_CHECK(A,B,msg) if((A)<(B)){pthread_mutex_lock(&mut_printf);fprintf(stderr,msg);pthread_mutex_unlock(&mut_printf);pthread_exit(NULL);}
-#define ROOM_MAX_WAITING_MSEC (60*1000)
+#define ROOM_MAX_WAITING_MSEC (6000*1000)
 #define N_M_SIZE (sizeof(net_match_status))
 #define N_F_SIZE (sizeof(net_flighter_status))
 #define PI 3.1415926
@@ -108,9 +109,9 @@ void * ui_thread(void * vargp){
 	while(connfd < 0){
 		clientlen = sizeof(struct sockaddr_storage);
 		connfd = accept(ui_listenfd,(SA *)&clientaddr,&clientlen);
-		pthread_mutex_lock(&mut_printf);
-		printf("[UI_THREAD] socket accepted\n");
-		pthread_mutex_unlock(&mut_printf);
+		//pthread_mutex_lock(&mut_printf);
+		//printf("[UI_THREAD] socket accepted\n");
+		//pthread_mutex_unlock(&mut_printf);
 
 		// set fd to be nonblock
 		flags = fcntl(connfd,F_GETFL,0);
@@ -119,18 +120,18 @@ void * ui_thread(void * vargp){
 
 		n = rio_readlineb(&rio,buf,MAXLINE);
 		if(n <= 0){
-			pthread_mutex_lock(&mut_printf);
-			printf("[UI_THREAD] ****************** timeout in reading url from web page *****************\n");
-			pthread_mutex_unlock(&mut_printf);
+			//pthread_mutex_lock(&mut_printf);
+			//printf("[UI_THREAD] ****************** timeout in reading url from web page *****************\n");
+			//pthread_mutex_unlock(&mut_printf);
 		}
 		else{
-			pthread_mutex_lock(&mut_printf);
-			printf("[UI_THREAD] Request 1st line: %s",buf);
-			pthread_mutex_unlock(&mut_printf);
+			//pthread_mutex_lock(&mut_printf);
+			//printf("[UI_THREAD] Request 1st line: %s",buf);
+			//pthread_mutex_unlock(&mut_printf);
 		}
 		// headers
 		read_requesthdrs(&rio);
-		printf("[UI_THREAD]parsed all headers\n"); 
+		//printf("[UI_THREAD]parsed all headers\n"); 
 
 
 		res_obj = cJSON_CreateObject();
@@ -247,6 +248,12 @@ void * connecting_target_flighter_thread(void * vargp){
 	socket_role * role;
 	int rec_bytes;
 	int flags;
+#ifdef SINGLE_ROOM_DEBUG
+	struct timeval srd_tv;
+	long long srd_start,srd_current;
+	double srd_secs;
+#endif
+
 
 	clientlen = sizeof(struct sockaddr_storage);
 
@@ -255,7 +262,7 @@ void * connecting_target_flighter_thread(void * vargp){
 	role = (socket_role *)malloc(sizeof(socket_role));
 
 	pthread_detach(pthread_self());
-
+restart_tf_thread:
 	connfd = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
 	printf("[TF_THREAD]first socket accepted\n");
 	
@@ -264,9 +271,11 @@ void * connecting_target_flighter_thread(void * vargp){
 	fcntl(connfd,F_SETFL,flags | O_NONBLOCK);
 
 	rio_readinitb(&rio,connfd);
-	rec_bytes = rio_readnb(&rio,role,sizeof(socket_role));
-	REC_BYTES_CHECK(rec_bytes,sizeof(socket_role),"****** E R R O R: timeout in connecting to target flighter server ******\n");
-
+	rec_bytes = rio_readnb(&rio,role,sizeof(socket_role),0);
+	if(rec_bytes < sizeof(socket_role)){
+		printf("****** E R R O R: timeout in connecting to target flighter server ******\nrestart connecting_tf_thread\n");
+		goto restart_tf_thread;
+	}
 	
 	printf("first socket role connected\n");
 	if(role->type == ROLE_SEND){
@@ -280,7 +289,7 @@ void * connecting_target_flighter_thread(void * vargp){
 	
 		connfd_rec = connfd;
 		rio_readinitb(&rio,connfd_rec);
-		rec_bytes = rio_readnb(&rio,role,sizeof(socket_role));
+		rec_bytes = rio_readnb(&rio,role,sizeof(socket_role),0);
 	}
 	else if(role->type == ROLE_RECV){
 		connfd_rec = connfd;
@@ -291,7 +300,7 @@ void * connecting_target_flighter_thread(void * vargp){
 		flags = fcntl(connfd_sen,F_GETFL,0);
 		fcntl(connfd_sen,F_SETFL,flags | O_NONBLOCK);
 		rio_readinitb(&rio,connfd_sen);
-		rec_bytes = rio_readnb(&rio,role,sizeof(socket_role));
+		rec_bytes = rio_readnb(&rio,role,sizeof(socket_role),0);
 	}
 	else{
 		printf("ERROR\n");
@@ -300,7 +309,10 @@ void * connecting_target_flighter_thread(void * vargp){
 		pthread_mutex_unlock(&mut_printf);
 		pthread_exit(NULL);
 	}
-	REC_BYTES_CHECK(rec_bytes,sizeof(socket_role),"****** E R R O R: timeout in connecting to target flighter server ******\n");
+	if(rec_bytes < sizeof(socket_role)){
+		printf("****** E R R O R: timeout in connecting to target flighter server ******\nrestart connecting_tf_thread\n");
+		goto restart_tf_thread;
+	}
 
 	// rio for received data only 
 	rio_readinitb(&rio,connfd_rec);
@@ -317,6 +329,11 @@ void * connecting_target_flighter_thread(void * vargp){
 			pthread_cond_wait(&cond_tf,&mut_tf);
 		}
 		pthread_mutex_lock(&mut_printf);
+#ifdef SINGLE_ROOM_DEBUG
+	gettimeofday(&srd_tv,NULL);
+	srd_start = TV_TO_MSEC(srd_tv);
+#endif	
+
 		printf("[TF_THREAD] tf_server working posture: %d %d %d %d %d %d %d %d %d %d %d %d\n",ready_pack_pt->p.x,ready_pack_pt->p.y,ready_pack_pt->p.z,
 				ready_pack_pt->p.u,ready_pack_pt->p.v,ready_pack_pt->p.w,ready_pack_pt->p.vx,ready_pack_pt->p.vy,ready_pack_pt->p.vz,
 				ready_pack_pt->p.vu,ready_pack_pt->p.vv,ready_pack_pt->p.vw);
@@ -324,8 +341,22 @@ void * connecting_target_flighter_thread(void * vargp){
 
 		rio_writen(connfd_sen,(char *)ready_pack_pt,sizeof(s_server_pack));
 		
-		rec_bytes = rio_readnb(&rio,(char *)&(ready_pack_pt->p),sizeof(posture));
-		REC_BYTES_CHECK(rec_bytes,sizeof(posture),"****** E R R O R: timeout in reading posture from target flighter server ******\n");
+		rec_bytes = rio_readnb(&rio,(char *)&(ready_pack_pt->p),sizeof(posture),0);
+		if(rec_bytes < sizeof(posture)){
+			printf("****** E R R O R: timeout in reading posture from target flighter server *******\n restart connecting_tf_thread\n");
+			pthread_cond_broadcast(&cond_tf);
+			pthread_mutex_unlock(&mut_tf);
+			goto restart_tf_thread;
+		}
+#ifdef SINGLE_ROOM_DEBUG
+	gettimeofday(&srd_tv,NULL);
+	srd_current = TV_TO_MSEC(srd_tv);
+	srd_secs = (srd_current-srd_start)/1000.0;
+	pthread_mutex_lock(&mut_printf);
+	printf("\n\n[CONNECTING_TARGET_FLIGHTER_THREAD] ###SINGLE_ROOM_DEBUG MODE### TARGET_FLIGHTER NET_READ TAKES TIME:%lf\n\n",srd_secs);
+	pthread_mutex_unlock(&mut_printf);
+#endif
+		//REC_BYTES_CHECK(rec_bytes,sizeof(posture),"****** E R R O R: timeout in reading posture from target flighter server ******\n");
 
 		pthread_mutex_lock(&mut_printf);
 		printf("[TF_THREAD] new posture: %d %d %d %d %d %d %d %d %d %d %d %d\n",ready_pack_pt->p.x,ready_pack_pt->p.y,ready_pack_pt->p.z,
@@ -369,7 +400,7 @@ void * connecting_s_server_thread(void * vargp){
 	role = (socket_role *)malloc(sizeof(socket_role));	
 
 	clientlen = sizeof(struct sockaddr_storage);
-
+restart_s_server_thread:
 
 	if(S_SERVER_WORK){
 		connfd = accept(sserver_listenfd,(SA *)&clientaddr,&clientlen);
@@ -380,8 +411,13 @@ void * connecting_s_server_thread(void * vargp){
 		fcntl(connfd,F_SETFL,flags | O_NONBLOCK);
 
 		rio_readinitb(&rio,connfd);
-		rec_bytes = rio_readnb(&rio,role,sizeof(socket_role));
-		REC_BYTES_CHECK(rec_bytes,sizeof(socket_role),"****** E R R O R: timeout in connecting to s server ******\n");
+		rec_bytes = rio_readnb(&rio,role,sizeof(socket_role),0);
+		if(rec_bytes < sizeof(socket_role)){
+			printf("****** E R R O R: timeout in connecting to simulink server ******\nrestart connecting_s_server_thread\n");
+			goto restart_s_server_thread;
+		}
+
+		//REC_BYTES_CHECK(rec_bytes,sizeof(socket_role),"****** E R R O R: timeout in connecting to s server ******\n");
 		if(role->type == ROLE_SEND){
 			connfd_sen = connfd;
 			connfd = accept(sserver_listenfd,(SA *)&clientaddr,&clientlen);
@@ -392,7 +428,7 @@ void * connecting_s_server_thread(void * vargp){
 
 			connfd_rec = connfd;
 			rio_readinitb(&rio,connfd_rec);
-			rec_bytes = rio_readnb(&rio,role,sizeof(socket_role));
+			rec_bytes = rio_readnb(&rio,role,sizeof(socket_role),0);
 		}
 		else if(role->type == ROLE_RECV){
 			connfd_rec = connfd;
@@ -404,7 +440,7 @@ void * connecting_s_server_thread(void * vargp){
 
 
 			rio_readinitb(&rio,connfd_sen);
-		 	rec_bytes = rio_readnb(&rio,role,sizeof(socket_role));
+		 	rec_bytes = rio_readnb(&rio,role,sizeof(socket_role),0);
 		}
 		else{
 			pthread_mutex_lock(&mut_printf);
@@ -412,7 +448,10 @@ void * connecting_s_server_thread(void * vargp){
 			pthread_mutex_unlock(&mut_printf);
 			pthread_exit(NULL);
 		}
-		REC_BYTES_CHECK(rec_bytes,sizeof(socket_role),"****** E R R O R: timeout in connecting to s server ******\n");
+		if(rec_bytes < sizeof(socket_role)){
+			printf("****** E R R O R: timeout in connecting to simulink server ******\nrestart connecting_s_server_thread\n");
+			goto restart_s_server_thread;
+		}
 		rio_readinitb(&rio,connfd_rec);
 	}
 
@@ -426,12 +465,11 @@ void * connecting_s_server_thread(void * vargp){
 		while(ready_client_id == 0){
 			pthread_cond_wait(&cond_s_server,&mut_s_server);
 		}
+		pthread_mutex_lock(&mut_printf);
 #ifdef SINGLE_ROOM_DEBUG
 	gettimeofday(&srd_tv,NULL);
 	srd_start = TV_TO_MSEC(srd_tv);
 #endif	
-	
-		pthread_mutex_lock(&mut_printf);
 		printf("[CONNECTING_S_SERVER_THREAD] start working for client %d\n",ready_client_id);
 		pthread_mutex_unlock(&mut_printf);
 
@@ -468,8 +506,15 @@ void * connecting_s_server_thread(void * vargp){
 				pack_pt->o.roll,pack_pt->o.pitch,pack_pt->o.dir,pack_pt->o.acc);
 			pthread_mutex_unlock(&mut_printf);
 
-			rec_bytes = rio_readnb(&rio,(char *)&(pack_pt->p),sizeof(posture));
-			REC_BYTES_CHECK(rec_bytes,sizeof(posture),"****** E R R O R: timeout in reading posture from s server ******\n");
+			rec_bytes = rio_readnb(&rio,(char *)&(pack_pt->p),sizeof(posture),0);
+			if(rec_bytes < sizeof(posture)){
+				printf("****** E R R O R: timeout in reading posture from simulink server *******\n restart connecting_s_server_thread\n");
+				pthread_cond_broadcast(&cond_s_server);
+				pthread_mutex_unlock(&mut_s_server);
+				goto restart_s_server_thread;
+			}
+
+			//REC_BYTES_CHECK(rec_bytes,sizeof(posture),"****** E R R O R: timeout in reading posture from s server ******\n");
 			
 #ifdef SINGLE_ROOM_DEBUG
 	gettimeofday(&srd_tv,NULL);
@@ -550,6 +595,7 @@ void * client_thread(void * vargp){
 	net_flighter_op net_f_o;
 	net_destroyed_flighter net_d_f;
 	net_destroyed_weapon net_d_w;
+	int ct;
 	// TODO: appropriate init_status needed
 	//net_match_status init_status;
 #ifdef SINGLE_ROOM_DEBUG
@@ -557,7 +603,9 @@ void * client_thread(void * vargp){
 	long long srd_start,srd_current;
 	double srd_secs;
 #endif
-	
+	// ct is used to avoid timeout when client is playing cg
+	ct = 0;	
+
 	init_status_buffer = (char *)malloc(N_M_SIZE+2*N_F_SIZE);	
 	
 	net_match_status * init_status = (net_match_status *)init_status_buffer;
@@ -599,9 +647,10 @@ void * client_thread(void * vargp){
 	rio_readinitb(&rio,connfd);
 	
 	// first time connection client tells this server its id
-	n = rio_readnb(&rio,&net_f_o,sizeof(net_flighter_op));
+	n = rio_readnb(&rio,&net_f_o,sizeof(net_flighter_op),0);
 	// printf("******* return val: %d *************\n",n);
-
+	
+	//printf("only %d bytes received\n",n);
 	REC_BYTES_CHECK(n,sizeof(net_flighter_op),"****** E R R O R: timeout in first-time connecting to client ******\n");
 	
 	client_id = net_f_o.user_id;
@@ -621,6 +670,10 @@ void * client_thread(void * vargp){
 
 	c_i_pt = (client_info *)v;
 
+	// there are other client_threads that are trying to cover the same client_id 
+	while(c_i_pt->threads != 0);
+	c_i_pt->threads = 1;
+
 	while(c_i_pt->overall_status == NULL);
 	
 	rio_writen(connfd,c_i_pt->overall_status,c_i_pt->os_size);
@@ -633,11 +686,11 @@ void * client_thread(void * vargp){
 	f_s_pt = &(c_i_pt->fos->s);
 	
 	// XXX
-	f_s_pt->tic = 0;
+	// f_s_pt->tic = 0;
 	
 	f_o_pt = &(c_i_pt->fos->op);
 	cct_sync_clients_pt = c_i_pt->cct_sync_clients;
-	client_clock = 0;
+	client_clock = f_s_pt->tic;
 	room_clock_pt = c_i_pt->room_clock_p;
 	mut_room_pt = c_i_pt->mut_room_pt;
 	cond_room_pt = c_i_pt->cond_room_pt;
@@ -660,9 +713,24 @@ void * client_thread(void * vargp){
 #endif
 	
 			printf("[CLIENT_THREAD id %d] ready to read op from client\n",c_i_pt->id);
-			n = rio_readnb(&rio,&net_f_o,sizeof(net_flighter_op));
-			printf("res : %d\n",n);
-			REC_BYTES_CHECK(n,sizeof(net_flighter_op),"****** E R R O R: timeout in reading op from client ******\n");
+			// if client is playing cg wait 2 min maximum
+			if((ct++) == 0)
+				n = rio_readnb(&rio,&net_f_o,sizeof(net_flighter_op),120*1000);
+			else
+				n = rio_readnb(&rio,&net_f_o,sizeof(net_flighter_op),0);	
+				
+
+			if(n < sizeof(net_flighter_op)){
+				pthread_mutex_lock(&mut_printf);
+				printf("[CLIENT_THREAD id %d] ****** E R R O R: timeout in reading op from client, only received %d bytes, this thread will exist ******\n",client_id,n);
+				pthread_mutex_unlock(&mut_printf);
+			
+				c_i_pt->threads--;
+				pthread_exit(NULL);
+			}
+
+			//printf("res : %d\n",n);
+			//REC_BYTES_CHECK(n,sizeof(net_flighter_op),"****** E R R O R: timeout in reading op from client ******\n");
 			if(n != 0){
 				// operation
 				pthread_mutex_lock(&mut_printf);
@@ -670,10 +738,10 @@ void * client_thread(void * vargp){
 				pthread_mutex_unlock(&mut_printf);
 #ifdef SINGLE_ROOM_DEBUG
 		gettimeofday(&srd_tv,NULL);
-		srd_current = TV_TO_MSEC(srd_tv);
+		srd_start = TV_TO_MSEC(srd_tv);
 		srd_secs = (srd_current - srd_start)/1000.0;
 		pthread_mutex_lock(&mut_printf);
-		printf("\n\n[CLIENT_THREAD id %d] ###SINGLE_ROOM_DEBUG### ###STATUS:CLIENT OP READ### TIME ELASPED:%lf\n\n",client_id,srd_secs);
+		printf("\n\n[CLIENT_THREAD id %d] ###SINGLE_ROOM_DEBUG### ###STATUS:CLIENT OP READ###\n\n",client_id,srd_secs);
 		pthread_mutex_unlock(&mut_printf);
 #endif
 
@@ -697,7 +765,7 @@ void * client_thread(void * vargp){
 
 				// destroyed flighters
 				for(i = 0; i < net_destroyed_flighter_n;i++){
-					n = rio_readnb(&rio,&net_d_f,sizeof(net_destroyed_flighter));					
+					n = rio_readnb(&rio,&net_d_f,sizeof(net_destroyed_flighter),0);					
 					REC_BYTES_CHECK(n,sizeof(net_destroyed_flighter),"****** E R R O R: timeout in reading detected destroyed flighter from client ******\n");
 					net_destroyed_flighter_id = net_d_f.id;
 					ccr_rw_map_query(cmap_fid2desct_pt,net_destroyed_flighter_id,&v);
@@ -708,12 +776,12 @@ void * client_thread(void * vargp){
 				}
 				// destroyed weapons
 				for(i = 0; i < net_destroyed_weapon_n;i++){
-					n = rio_readnb(&rio,&net_d_w,sizeof(net_destroyed_weapon));					
+					n = rio_readnb(&rio,&net_d_w,sizeof(net_destroyed_weapon),0);					
 					REC_BYTES_CHECK(n,sizeof(net_destroyed_weapon),"****** E R R O R: timeout in reading detected destroyed weapon from client ******\n");
 					//TODO: deal with net_destroyed_weapon
 				
 				}
-				n = rio_readlineb(&rio,buf,MAXLINE);
+				//n = rio_readlineb(&rio,buf,MAXLINE);
 			}
 			else{
 				//TODO: net problem
@@ -792,6 +860,18 @@ void * client_thread(void * vargp){
 			while(client_clock != *room_clock_pt){
 				// wait for room_thread's clock to go on
 				pthread_cond_wait(cond_clients_pt,mut_clients_pt);	
+				// check if the room has timed out
+				if(ccr_rw_map_query(&cmap_cid2cinfo,c_i_pt->id,&v) == -1){
+					pthread_mutex_lock(&mut_printf);
+					printf("[CLIENT_THREAD id %d] room timeout, client thread exist\n",c_i_pt->id);
+					pthread_mutex_unlock(&mut_printf);
+
+					if(ccr_ct_dec(&cct_clients) != 0){
+						exit(-1);
+					}
+					pthread_exit(NULL);
+
+				}
 			}
 			pthread_mutex_unlock(mut_clients_pt);
 
@@ -803,7 +883,12 @@ void * client_thread(void * vargp){
 			rio_writen(connfd,c_i_pt->overall_status,c_i_pt->os_size);
 			// TODO: end of game
 
-			if(((net_match_status *)c_i_pt->overall_status)->timestamp == -1){				
+			if(((net_match_status *)c_i_pt->overall_status)->timestamp == -1 || ((net_match_status *)c_i_pt->overall_status)->winner_group != 0){				
+				
+				pthread_mutex_lock(&mut_printf);
+				printf("[CLIENT_THREAD id %d] game end ; winner group %d; timestamp %d;thread will exist\n",c_i_pt->id,((net_match_status *)c_i_pt->overall_status)->winner_group,((net_match_status *)c_i_pt->overall_status)->timestamp);
+				pthread_mutex_unlock(&mut_printf);
+
 				break;
 			}
 #ifdef SINGLE_ROOM_DEBUG
@@ -913,7 +998,7 @@ void * room_thread(void * vargp){
 	struct timeval tv;
 	struct timespec ts;
 	long long start,current;
-	int room_restart;	
+	//int room_restart;	
 	double rand_angle;
 
 #ifdef SINGLE_ROOM_DEBUG
@@ -928,7 +1013,7 @@ void * room_thread(void * vargp){
 	net_weapon_status net_w_s;	
 	int cursor;
 	int flags;
-	int to_ct;
+	//int to_ct;
 	// mutex and cond for clients to wake up this room:
 	// i.e. to info this room that one of the clients has been ready
 	pthread_mutex_t mut_room;
@@ -986,7 +1071,7 @@ void * room_thread(void * vargp){
 	printf("[ROOM_THREAD]parsed all headers\n"); 
 	char * res_content = "HTTP/1.0 200 OK\r\nServer: Flighter Fight Server\r\nContent-length: 2\r\nContent-type: html/text\r\n\r\nOK";
 	
-	to_ct = 0;
+	//to_ct = 0;
 	/*if((n = rio_readlineb(&rio,buf,MAXLINE)) > 0){
 		pthread_mutex_lock(&mut_printf);
 		printf("%s\n",buf);
@@ -996,20 +1081,19 @@ void * room_thread(void * vargp){
 	
 
 	// init room_clock
+	
 	room_clock = 0;
-	room_restart = 0;
+	r_i_pt->tic = 0;
+	//room_restart = 0;
 
 	// read room info from room server
 	// just basic configurations
 	n = rio_readlineb(&rio,buf,MAXLINE);
-	while(n < 5){
-		n = rio_readlineb(&rio,buf,MAXLINE);
-	}
-	if(1){
-		REC_BYTES_CHECK(n,-1,"[ROOM_THREAD] ************* time out in reading fig info from room server **************\n");
+	if(n != 0){
+		REC_BYTES_CHECK(n,-1,"[ROOM_THREAD] ************* time out in reading room config info from room server **************\n");
 		// TODO: delete output
 		printf("[ROOM_THRAD] ready to receive official room content...\n");
-		printf("[buf content] [%d bytes]%s\n",strlen(buf),buf);
+		printf("[buf content] [%d bytes] [supposed to be %d bytes]%s\n",strlen(buf),n,buf);
 
 		buf_pt = buf;
 		// TODO: check if at any time atoi returns 0
@@ -1035,10 +1119,18 @@ void * room_thread(void * vargp){
 		r_i_pt->cmap_fid2desct = &cmap_fid2desct;
 		// fid 0: target flighter 
 		ccr_rw_map_insert(&cmap_fid2desct,0,0);
+
+		// room duplicity check
+		while(ccr_rw_map_query(&cmap_rid2rinfo,r_i_pt->room_id,&v) != -1){
+			//printf("room not deleted!!!\n");
+			//XXX: this room_thread cannot go on because last room of this id has not been deleted
+		}
+		//printf("FUCK!!!\n");
+
 		for(i = 0; i < r_i_pt->size; i++){
 			if((n = rio_readlineb(&rio,buf,MAXLINE)) != 0){
 				// TODO: delete output
-				printf("%s",buf);
+				printf("[client %d info:]%s",i,buf);
 				buf_pt = buf;
 				
 				(*(r_i_pt->clients+i)).room_id = r_i_pt->room_id;
@@ -1084,6 +1176,9 @@ void * room_thread(void * vargp){
 				(*(r_i_pt->clients+i)).overall_status = NULL;
 				// init: 0
 				(*(r_i_pt->clients+i)).cmap_fid2desct = &cmap_fid2desct;
+				// init : 0
+				(*(r_i_pt->clients+i)).threads = 0;
+
 				ccr_rw_map_insert(&cmap_fid2desct,(*(r_i_pt->clients+i)).flighter_id,0);
 			}
 			else{
@@ -1168,8 +1263,29 @@ void * room_thread(void * vargp){
 			gettimeofday(&tv,NULL);
 			current = TV_TO_MSEC(tv);
 			if(current - start > ROOM_MAX_WAITING_MSEC){
-				room_restart = 1;
-				to_ct++;
+				// room waiting timeout: delete room info from cmap_rid2rinfo
+				// delete corresponding client info from cmap_cid2cinfo
+				// delete this room thread
+				pthread_mutex_lock(&mut_printf);
+				printf("[ROOM_THREAD id %d] room timeout; thread exit\n",r_i_pt->room_id);
+				pthread_mutex_unlock(&mut_printf);
+				delete_room_from_cmap(&cmap_rid2rinfo,&cmap_cid2cinfo,r_i_pt);
+				// wake up clients
+				pthread_mutex_lock(&mut_clients);
+				pthread_cond_broadcast(&cond_clients);
+				pthread_mutex_unlock(&mut_clients);
+				ccr_ct_reset(&cct_sync_clients);
+			
+				if(ccr_ct_dec(&cct_rooms) != 0){
+					exit(-1);
+				}
+					
+				assert(ccr_rw_map_query(&cmap_rid2rinfo,r_i_pt->room_id,&v) == -1);
+				//assert(0);
+				pthread_exit(NULL);
+
+				//room_restart = 1;
+				//to_ct++;
 				break;
 			}	
 
@@ -1180,7 +1296,7 @@ void * room_thread(void * vargp){
 		}
 		pthread_mutex_unlock(&mut_room);
 	
-		if(room_restart == 1){
+		/*if(room_restart == 1){
 			room_clock = 0;
 			if(to_ct == 1){
 				pthread_mutex_lock(&mut_printf);
@@ -1190,9 +1306,9 @@ void * room_thread(void * vargp){
 			}
 			room_restart = 0;
 			continue;		
-		}		
+		}*/		
 
-		to_ct = 0;
+		//to_ct = 0;
 		pthread_mutex_lock(&mut_printf);
 		printf("[ROOM_THREAAD id %d] room sync accomplished clock %d\n",r_i_pt->room_id,room_clock);
 		pthread_mutex_unlock(&mut_printf);
@@ -1302,24 +1418,26 @@ void * room_thread(void * vargp){
 			net_m_s.flighters_n = 0;
 			net_m_s.weapons_n = 0;
 			net_m_s.winner_group = alive_group_id;
-			strncpy(buf,(char *)&net_m_s,sizeof(net_match_status));	
+			memcpy(buf,(char *)&net_m_s,sizeof(net_match_status));	
 			for(i = 0; i < r_i_pt->size; i++){
 				(r_i_pt->clients+i)->overall_status = buf;
 				(r_i_pt->clients+i)->os_size = sizeof(net_match_status);
 			}
 			// record
-			memcpy(match_record+mr_cursor,buf,cursor);
-			mr_cursor += cursor;				
+			memcpy(match_record+mr_cursor,buf,sizeof(net_match_status));
+			mr_cursor += sizeof(net_match_status);				
 			// TODO: write to local fS	
-			sprintf(buf,"./match_records/match_type%d_id%d.rec",r_i_pt->match_type,r_i_pt->match_id);
-			mr_fd = open(buf,O_WRONLY|O_CREAT,0644);
+			sprintf(temp_buf,"./match_records/match_type%d_id%d.rec",r_i_pt->match_type,r_i_pt->match_id);
+			mr_fd = open(temp_buf,O_WRONLY|O_CREAT,0644);
 			rio_writen(mr_fd,match_record,mr_cursor);
 			close(mr_fd);
 
 			pthread_mutex_lock(&mut_printf);
-			printf("[ROOM_THREAAD id %d] [GAME id %d]room status of clock %d:\n #### Group %d has won! Game over ####\n",r_i_pt->room_id,r_i_pt->match_id,room_clock,alive_group_id);
+			printf("[ROOM_THREAAD id %d] [GAME id %d]room status of clock %d:\n #### Group %d has won! Game over ####\n",r_i_pt->room_id,r_i_pt->match_id,((net_match_status *)buf)->timestamp,((net_match_status *)buf)->winner_group);
 			pthread_mutex_unlock(&mut_printf);
-				
+			
+			// wait clients
+			sleep(3);		
 			
 
 			// when room_clock moves on notify all clients to move on
@@ -1333,6 +1451,9 @@ void * room_thread(void * vargp){
 			if(ccr_ct_dec(&cct_rooms) != 0){
 				exit(-1);
 			}
+					
+			assert(ccr_rw_map_delete(&cmap_rid2rinfo,r_i_pt->room_id) == 0);
+			//assert(0);
 			pthread_exit(NULL);
 		}
 		cursor = 0;
@@ -1395,6 +1516,7 @@ void * room_thread(void * vargp){
 		// when room_clock moves on notify all clients to move on
 		pthread_mutex_lock(&mut_clients);
 		room_clock++;
+		r_i_pt->tic = room_clock;
 		pthread_cond_broadcast(&cond_clients);
 		pthread_mutex_unlock(&mut_clients);
 
@@ -1499,6 +1621,7 @@ int main(int argc,char * argv[]){
 	while(1){
 		clientlen = sizeof(struct sockaddr_storage);
 		connfd = accept(roomserver_listenfd,(SA *)&clientaddr,&clientlen);
+		//printf("12345 %d %d\n",connfd,max_rooms);
 		sbuf_insert(&sbuf_for_room_server,connfd);
 		if(ccr_ct_query(&cct_rooms,&v) != 0){
 			exit(-1);

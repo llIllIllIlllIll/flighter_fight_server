@@ -63,11 +63,15 @@ void * fake_client_thread(void * vargs){
 			
 			if(i == 2*clocks-1){
 				net_f_o.detected_destroyed_flighters = 1;
-				net_d_f.id = 0;
+				net_d_f.id = 1;
 				rio_writen(clientfd,&net_f_o,sizeof(net_flighter_op));
 				rio_writen(clientfd,&net_d_f,sizeof(net_destroyed_flighter));
 			}
 			else{
+				// test 1 client disconnected
+				//if(i > 105 && (local_clientid % 2)){
+				//	continue;
+				//}
 				rio_writen(clientfd,&net_f_o,sizeof(net_flighter_op));
 			}
 			
@@ -109,10 +113,13 @@ void * fake_client_thread(void * vargs){
 				n = rio_readlineb(&rio,buf,MAXLINE);
 			}*/
 			rio_readnb(&rio,&net_m_s,sizeof(net_match_status));
-			if(net_m_s.timestamp == -1){
-				printf("MATCH END! WINNER GROUP %d\n",net_m_s.winner_group);
-			}			
-
+			if(net_m_s.timestamp == -1 || net_m_s.winner_group != 0){
+				printf("\n\nMATCH END! WINNER GROUP %d TIMESTAMP %d\n\n",net_m_s.winner_group,net_m_s.timestamp);
+				pthread_exit(NULL);
+			}
+			else{
+				printf("[CLIENT %d] status of clock %d:\n",local_clientid,net_m_s.timestamp);
+			}
 			rio_readnb(&rio,&net_f_s,sizeof(net_flighter_status));
 			printf("flighter status: %d %d %d\n",net_f_s.x,net_f_s.y,net_f_s.z);
 			rio_readnb(&rio,&net_f_s,sizeof(net_flighter_status));

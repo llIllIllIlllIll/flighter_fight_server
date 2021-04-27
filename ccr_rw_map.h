@@ -32,4 +32,6 @@ int ccr_rw_map_query(ccr_rw_map * cmap,uint64_t k,uint64_t * v);
 // return value is 0 if this is the last element in ccr_rw_map
 // othersize return 1
 int ccr_rw_map_iterate(ccr_rw_map * cmap,uint64_t * k,uint64_t * v);
+// delete from map: 0 success -1 failed
+int ccr_rw_map_delete(ccr_rw_map * cmap,uint64_t k);
 #endif
