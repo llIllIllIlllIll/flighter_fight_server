@@ -1,3 +1,13 @@
+// V000: Author: Softpudding
+// A BRIEF INTRODUCTION TO THIS SERVER:
+// 1. a main thread listens for room server to send room info
+// 2. a secondary main thread listens for clients
+// 3. for every room (as long as current room number is smaller than max_rooms)
+//    a room thread is responsible for everything
+// 4. for every client (connected client) (as long as current client number is smaller than max_clients)
+// a client thread is responsible for contacting with it
+
+
 #include "flighter_msg.h"
 #include "net.h"
 #include "ccr_rw_map.h"
@@ -9,31 +19,38 @@
 #include <stdlib.h>
 #include <math.h>
 #include <assert.h>
+
+// This macro can move a char pointer to the next non-space place
 #define MOVE_AHEAD_IN_BUF(p) (strchr(p,' ')+1)
+
+// Set the two macors to be 0 can make the match move on without Simulink working
 #define S_SERVER_WORK 1
 #define TARGET_FLIGHTER_WORK 1
+
 // This macro is defined in 2021.4.20:
 // When two clients participate in a match togetehr the game process moves surprisingly slow
 // and I need to use a timer to find the bottleneck
 //#define SINGLE_ROOM_DEBUG
+
 // This macro is used to check return value of rio_readnb and rio_readlineb
 // and when dealing with rio_readlineb n should be set to 0
+// however please notice: this macro ends a thread immediately so when you do not want to end the thread DO NOT USE IT
 #define REC_BYTES_CHECK(A,B,msg) if((A)<(B)){pthread_mutex_lock(&mut_printf);fprintf(stderr,msg);pthread_mutex_unlock(&mut_printf);pthread_exit(NULL);}
+
+// This macro defines the maximum waiting time of a room_thread: how long a room_thread should wait for all its clients to accomlish
+// synchronization
 #define ROOM_MAX_WAITING_MSEC (6000*1000)
+
 #define N_M_SIZE (sizeof(net_match_status))
 #define N_F_SIZE (sizeof(net_flighter_status))
 #define PI 3.1415926
 #define RAND_ANGLE() ((((double)(rand()%60))/60.0)*2*PI)
-// 4MB
+
+// Maximum size of a match_record file:4MB
 #define MATCH_RECORD_MAX_SIZE (1<<22)
+
 //#define DEBUG
-// A BRIEF INTRODUCTION TO THIS SERVER:
-// 1. a main thread listens for room server to send room info
-// 2. a secondary main thread listens for clients
-// 3. for every room (as long as current room number is smaller than max_rooms)
-//    a room thread is responsible for everything
-// 4. for every client (connected client) (as long as current client number is smaller than max_clients)
-// a client thread is responsible for contacting with it
+
 sbuf_t sbuf_for_room_server;
 sbuf_t sbuf_for_clients;
 // 2 maps:
@@ -69,7 +86,7 @@ int tf_ready_signal;
 // model server
 int sserver_listenfd;
 
-// target_flighter AKA ba ji
+// target_flighter AKA drone
 int tf_listenfd;
 
 // ui
