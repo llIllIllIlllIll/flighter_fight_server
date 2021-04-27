@@ -6,8 +6,8 @@
   <meta charset="utf-8">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="refresh" content="3 ">
-  <title>Browse all</title>
+  <meta http-equiv="refresh" content="3 " >
+  <title>通讯中心服务器监视页面</title>
   
   <!-- PLUGINS CSS STYLE -->
   <!-- Bootstrap -->
@@ -60,7 +60,7 @@
 			<div class="col-md-12">
 				<!-- Header Contetnt -->
 				<div class="content-block">
-					<h1>Flighter Fight Server Monitor Page</h1>
+					<h1>通讯中心服务器监视页面</h1>
 				</div>
 				
 			</div>
@@ -71,26 +71,26 @@
 <section class="" id="browseList">
 	<div class="" v-if="browse_state">
 		<div class="">
-			<div class="">
-				<div class="">
+			<div class="col-md-12">
+				<div class="row mt-30">
                     <div v-for="(room,index) in displays" :key="index">
                         <div class="card">
                             <div class="">
-                                <div class="">current room tic:{{room.tic}}</div>
+                                <div class="">当前房间tic:{{room.tic}}</div>
                             </div>
                             <br>
                             <div class="card-body">
-                                <h4 class="card-title"><a href="">Room_id:{{room.room_id}} Match_id:{{room.match_id}}</a></h4>
+                                <h4 class="card-title"><a href="">房间编号:{{room.room_id}} 比赛编号:{{room.match_id}}</a></h4>
                                 <ul class="list-inline product-meta">
                                     <li class="list-inline-item">
-                                        <a href=""><i class="fa fa-user-o"></i>Clients:{{room.clients.length}}</a>
+                                        <a href=""><i class="fa fa-user-o"></i>连接用户数量:{{room.clients.length}}</a>
                                     </li>
                                     <li class="list-inline-item">
-                                        <a href=""><i class="fa fa-grav"></i>Simulation Steplength:{{room.steplength}}</a>
+                                        <a href=""><i class="fa fa-grav"></i>仿真步长:{{room.steplength}}</a>
                                     </li>
                                 </ul>
                                 <ul v-for="(client,k) in room.clients" :key="k">
-                                    <li>client_id:{{client.client_id}} flighter_id:{{client.flighter_id}} group_id:{{client.group_id}} tic:{{client.tic}}</li>
+                                    <li>用户编号:{{client.client_id}} 飞机编号:{{client.flighter_id}} 阵营编号:{{client.group_id}} tic:{{client.tic}}</li>
                                 </ul>
                                 <p class="card-text"></p>
                             </div>

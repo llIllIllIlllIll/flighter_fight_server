@@ -93,15 +93,6 @@ var app_main=new Vue({
 		isadmin:false
     },
     mounted(){
-        this.$http.get('http://202.120.40.8:30603')
-        .then(function(res){
-				console.log('请求成功');
-                console.log(res);
-            
-            },function(){
-                console.log('请求失败处理');
-                alert("CONNECTION ERR.");
-            });
     }
 })
 
