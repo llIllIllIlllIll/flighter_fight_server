@@ -49,6 +49,7 @@ typedef struct _operation{
 	int32_t dir;
 	int32_t acc;
 	int32_t launch_weapon;
+	int32_t steplength;
 } operation;
 // pack only for communication with simulink
 typedef struct _s_server_pack{

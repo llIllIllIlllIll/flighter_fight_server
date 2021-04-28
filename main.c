@@ -506,7 +506,8 @@ restart_s_server_thread:
 			pack_pt->p.v = ready_f_s_pt->v;
 			pack_pt->p.w = ready_f_s_pt->w;*/
 			memcpy(&(pack_pt->o.pitch),&(ready_f_o_pt->pitch),sizeof(int32_t)*5);
-
+			// FIXME
+			pack_pt->o.steplength = 1;
 			/*pack_pt->o.pitch = ready_f_o_pt->pitch;
 			pack_pt->o.roll = ready_f_o_pt->roll;
 			pack_pt->o.dir = ready_f_o_pt->direction;
@@ -1352,7 +1353,7 @@ void * room_thread(void * vargp){
 				pthread_mutex_lock(&mut_printf);
 				printf("[ROOM_THREAAD id %d] asking target flighter server to work\n",r_i_pt->room_id);
 				pthread_mutex_unlock(&mut_printf);
-
+				pack_pt->o.steplength = r_i_pt->simulation_steplength;
 				ready_pack_pt = pack_pt;
 				pthread_cond_broadcast(&cond_tf);
 				pthread_mutex_unlock(&mut_tf);
