@@ -30,6 +30,13 @@
 #define GAME_END_HOST "localhost"
 #define GAME_END_PORT "30609"
 #define GAME_END_STRING_PATTERN "POST /room/endGame HTTP/1.1\r\nContent-Type: application/json\r\nHost: 202.120.40.8:30609\r\nContent-Length:%d\r\n\r\n%s"
+
+
+#define MAX_DRONE_N 10
+#define MAX_KINE_N 10
+
+#define BKGGKDD printf("BKGGKDD!\n");
+
 //#define DEBUG
 // A BRIEF INTRODUCTION TO THIS SERVER:
 // 1. a main thread listens for room server to send room info
@@ -45,8 +52,14 @@ sbuf_t sbuf_for_clients;
 // roomid - room info
 ccr_rw_map cmap_cid2cinfo;
 ccr_rw_map cmap_rid2rinfo;
-
-
+// 2 maps: sock id - sock_pair
+ccr_rw_map cmap_sid2sp_drone;
+ccr_rw_map cmap_sid2sp_kine;
+// 2 sbuf: save sock pair for drone or kine
+sbuf_t sbuf_4_drone_sp;
+sbuf_t sbuf_4_kine_sp;
+// drone_thread id
+int drone_thread_id;
 
 int clients_listenfd;
 ccr_ct cct_rooms;
@@ -57,20 +70,20 @@ int max_clients;
 int director_listenfd;
 // mutex & cond for connecting_s_server_thread
 // purpose: at one time only one client thread connects the connecting_s_server_thread
-pthread_mutex_t mut_s_server;
-pthread_cond_t cond_s_server;
+pthread_mutex_t mut_kine;
+pthread_cond_t cond_kine;
 // mutex & cond for controller
 pthread_mutex_t mut_con;
 pthread_cond_t cond_con;
 
 // ready_client_id is used to tell connecting_s_server_thread that one of the clients' status
-// need to be calculated by s_server
-uint32_t ready_client_id;
+// need to be calculated by kine_server
+uint32_t ready_client_ids[MAX_KINE_N];
 
 // ready_pack_pt is used to tell connecting_tf_thread that one of the postures need update
-s_server_pack * ready_pack_pt;
+s_server_pack * ready_pack_pts[MAX_DRONE_N];
 // this signal tells room_thread that a new posture is calculated 
-int tf_ready_signal;
+//int tf_ready_signal;
 
 // model server
 int sserver_listenfd;
@@ -81,8 +94,8 @@ int tf_listenfd;
 // ui
 int ui_listenfd;
 // mutex& cond for flighter_server( or client?)
-pthread_mutex_t mut_tf;
-pthread_cond_t cond_tf;
+pthread_mutex_t mut_drone;
+pthread_cond_t cond_drone;
 
 // mutex protect STDOUT
 pthread_mutex_t mut_printf;
@@ -240,7 +253,7 @@ void * controller_thread(void * vargp){
 		
 }
 
-void * connecting_target_flighter_thread(void * vargp){
+void * drone_thread(void * vargp){
 	// rio_rec for receiving info from target_flighter 
 	// rio_sen for sending
 	rio_t rio;
@@ -249,98 +262,61 @@ void * connecting_target_flighter_thread(void * vargp){
 	// same as above
 	int connfd_rec,connfd_sen,connfd;
 	struct sockaddr_storage clientaddr;
-	//posture * tf_posture;
-	//s_server_pack * tf_pack;
-	socket_role * role;
 	int rec_bytes;
-	int flags;
+	socket_pair * sock_pair;
+	int64_t item;
+	// the array ready_pack_pts is empty
+	int empty;
+	int i;
+	int local_thread_id;
+	s_server_pack * ready_pack_pt;
 #ifdef SINGLE_ROOM_DEBUG
 	struct timeval srd_tv;
 	long long srd_start,srd_current;
 	double srd_secs;
 #endif
-
-
-	clientlen = sizeof(struct sockaddr_storage);
-
-	//tf_posture = (posture *)malloc(sizeof(posture));
-	//tf_pack = (s_server_pack *)malloc(sizeof(s_server_pack));
-	role = (socket_role *)malloc(sizeof(socket_role));
-
 	pthread_detach(pthread_self());
-restart_tf_thread:
-	connfd = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
-	printf("[TF_THREAD]first socket accepted\n");
-	
-	// set fd to be nonblock
-	flags = fcntl(connfd,F_GETFL,0);
-	fcntl(connfd,F_SETFL,flags | O_NONBLOCK);
-
-	rio_readinitb(&rio,connfd);
-	rec_bytes = rio_readnb(&rio,role,sizeof(socket_role),0);
-	if(rec_bytes < sizeof(socket_role)){
-		printf("****** E R R O R: timeout in connecting to target flighter server ******\nrestart connecting_tf_thread\n");
-		goto restart_tf_thread;
-	}
-	
-	printf("first socket role connected\n");
-	if(role->type == ROLE_SEND){
-		connfd_sen = connfd;
-		printf("[TF_THREAD] accepted sock_sen call accept\n");
-		connfd = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);	
-		printf("[TF_THREAD] sock_rec accepted!\n");
-		// set fd to be nonblock
-		flags = fcntl(connfd,F_GETFL,0);
-		fcntl(connfd,F_SETFL,flags | O_NONBLOCK);
-	
-		connfd_rec = connfd;
-		rio_readinitb(&rio,connfd_rec);
-		rec_bytes = rio_readnb(&rio,role,sizeof(socket_role),0);
-	}
-	else if(role->type == ROLE_RECV){
-		connfd_rec = connfd;
-		printf("[TF_THREAD] accepted sock_rec call accept\n");
-		connfd_sen = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
-		// set fd to be nonblock
-		printf("[TF_THREAD] sock_sen accpted\n");
-		flags = fcntl(connfd_sen,F_GETFL,0);
-		fcntl(connfd_sen,F_SETFL,flags | O_NONBLOCK);
-		rio_readinitb(&rio,connfd_sen);
-		rec_bytes = rio_readnb(&rio,role,sizeof(socket_role),0);
-	}
-	else{
-		printf("ERROR\n");
-		pthread_mutex_lock(&mut_printf);
-		fprintf(stderr,"[TF_THREAD] wrong pack\n");
-		pthread_mutex_unlock(&mut_printf);
-		pthread_exit(NULL);
-	}
-	if(rec_bytes < sizeof(socket_role)){
-		printf("****** E R R O R: timeout in connecting to target flighter server ******\nrestart connecting_tf_thread\n");
-		goto restart_tf_thread;
-	}
-
-	// rio for received data only 
+	item = sbuf_remove(&sbuf_4_drone_sp);
+	sock_pair = (socket_pair *)item;
+	connfd_rec = sock_pair->sock_rec_fd;
+	connfd_sen = sock_pair->sock_sen_fd;
+	local_thread_id = sock_pair->id;
 	rio_readinitb(&rio,connfd_rec);
-	
 
+	
 	pthread_mutex_lock(&mut_printf);
-	printf("[TF_THREAD] target_flighter connected\n");
+	printf("[DRONE_THREAD] drone server %d connected\n",local_thread_id);
 	pthread_mutex_unlock(&mut_printf);	
 
+
 	while(1){
-		pthread_mutex_lock(&mut_tf);
-		// not NULL and 1 means OK
-		while(ready_pack_pt == NULL){
-			pthread_cond_wait(&cond_tf,&mut_tf);
+		empty = 1;	
+		pthread_mutex_lock(&mut_drone);
+		do{
+			// check if there is any pack available
+			for(i = 0; i < MAX_DRONE_N;i++){
+				if(ready_pack_pts[i] != NULL){
+					empty = 0;
+					ready_pack_pt = ready_pack_pts[i];
+					ready_pack_pts[i] = NULL;
+					break;
+				}
+			}
+			if(empty == 1){
+				pthread_cond_wait(&cond_drone,&mut_drone);
+			}	
 		}
+		while(empty == 1);
+		// NULL and 0 means not OK
+		pthread_cond_broadcast(&cond_drone);
+		pthread_mutex_unlock(&mut_drone);
+			
 		pthread_mutex_lock(&mut_printf);
 #ifdef SINGLE_ROOM_DEBUG
 	gettimeofday(&srd_tv,NULL);
 	srd_start = TV_TO_MSEC(srd_tv);
 #endif	
-
-		printf("[TF_THREAD] tf_server working posture: %d %d %d %d %d %d %d %d %d %d %d %d\n",ready_pack_pt->p.x,ready_pack_pt->p.y,ready_pack_pt->p.z,
+		printf("[DRONE_THREAD %d] working posture of tic[%d]: %d %d %d %d %d %d %d %d %d %d %d %d\n",local_thread_id,ready_pack_pt->p.tic,ready_pack_pt->p.x,ready_pack_pt->p.y,ready_pack_pt->p.z,
 				ready_pack_pt->p.u,ready_pack_pt->p.v,ready_pack_pt->p.w,ready_pack_pt->p.vx,ready_pack_pt->p.vy,ready_pack_pt->p.vz,
 				ready_pack_pt->p.vu,ready_pack_pt->p.vv,ready_pack_pt->p.vw);
 		pthread_mutex_unlock(&mut_printf);
@@ -349,11 +325,11 @@ restart_tf_thread:
 		
 		rec_bytes = rio_readnb(&rio,(char *)&(ready_pack_pt->p),sizeof(posture),0);
 		if(rec_bytes < sizeof(posture)){
-			printf("****** E R R O R: timeout in reading posture from target flighter server,only received %d bytes *******\n restart connecting_tf_thread\n",rec_bytes);
-			pthread_cond_broadcast(&cond_tf);
-			pthread_mutex_unlock(&mut_tf);
-			goto restart_tf_thread;
+			printf("****** E R R O R: timeout in reading posture from target flighter server,only received %d bytes *******\n delete this drone_thread require a new one\n target flighter will stay in its old position\n\n\n",rec_bytes);
+			ready_pack_pt->p.tic++;
+			pthread_exit(NULL);
 		}
+		ready_pack_pt->p.tic++;
 #ifdef SINGLE_ROOM_DEBUG
 	gettimeofday(&srd_tv,NULL);
 	srd_current = TV_TO_MSEC(srd_tv);
@@ -362,205 +338,282 @@ restart_tf_thread:
 	printf("\n\n[CONNECTING_TARGET_FLIGHTER_THREAD] ###SINGLE_ROOM_DEBUG MODE### TARGET_FLIGHTER NET_READ TAKES TIME:%lf\n\n",srd_secs);
 	pthread_mutex_unlock(&mut_printf);
 #endif
-		//REC_BYTES_CHECK(rec_bytes,sizeof(posture),"****** E R R O R: timeout in reading posture from target flighter server ******\n");
-
 		pthread_mutex_lock(&mut_printf);
-		printf("[TF_THREAD] new posture: %d %d %d %d %d %d %d %d %d %d %d %d\n",ready_pack_pt->p.x,ready_pack_pt->p.y,ready_pack_pt->p.z,
+		printf("[DRONE_THREAD %d] new posture of tic[%d]: %d %d %d %d %d %d %d %d %d %d %d %d\n",local_thread_id,ready_pack_pt->p.tic,ready_pack_pt->p.x,ready_pack_pt->p.y,ready_pack_pt->p.z,
 				ready_pack_pt->p.u,ready_pack_pt->p.v,ready_pack_pt->p.w,ready_pack_pt->p.vx,ready_pack_pt->p.vy,ready_pack_pt->p.vz,
 				ready_pack_pt->p.vu,ready_pack_pt->p.vv,ready_pack_pt->p.vw);
 		pthread_mutex_unlock(&mut_printf);
-		// NULL and 0 means not OK
-		ready_pack_pt = NULL;
-		pthread_cond_broadcast(&cond_tf);
-		pthread_mutex_unlock(&mut_tf);
 	}
 }
 
 
-// The only worker thread that's responsible of connecting with simulink server
-void * connecting_s_server_thread(void * vargp){
+
+void * waiting_tf_thread(void * vargp){
+	rio_t rio;
+	char buf[MAXLINE];
+	socklen_t clientlen;
+	struct sockaddr_storage clientaddr;
+	socket_role sock_role;
+	int rec_bytes;
+	int flags;
+	socket_pair * sock_pair;
+	uint64_t sock_id,v;
+	int connfd;	
+	pthread_t tid;
+
+	clientlen = sizeof(struct sockaddr_storage);
+	pthread_detach(pthread_self());
+	// this thread listens for drone socket forever
+	while(1){
+		connfd = accept(tf_listenfd,(SA *)&clientaddr,&clientlen);
+		pthread_mutex_lock(&mut_printf);
+		printf("[WAITING_TF_THREAD] a socket has connected: connfd: %d\n",connfd);
+		pthread_mutex_unlock(&mut_printf);
+		// set fd to be nonblock
+		flags = fcntl(connfd,F_GETFL,0);
+		fcntl(connfd,F_SETFL,flags | O_NONBLOCK);
+		//BKGGKDD;
+		rio_readinitb(&rio,connfd);
+		//BKGGKDD;
+		rec_bytes = rio_readnb(&rio,&sock_role,sizeof(socket_role),0);
+		//BKGGKDD;
+		if(rec_bytes < sizeof(socket_role)){
+			pthread_mutex_lock(&mut_printf);
+			printf("[WAITING_TF_THREAD]****** E R R O R: timeout in reading role from target flighter server ******\n");
+			pthread_mutex_unlock(&mut_printf);
+			continue;
+		}
+		//BKGGKDD;
+		sock_id = sock_role.id;
+		// check if this sock_id has corresponding sock_pair in storage
+		if(ccr_rw_map_query(&cmap_sid2sp_drone,sock_id,&v) == 0){
+			sock_pair = (socket_pair *)v;
+		}		
+		else{
+			// if not malloc it
+			sock_pair = (socket_pair *)malloc(sizeof(socket_pair));
+			sock_pair -> sock_sen_fd = -1;
+			sock_pair -> sock_rec_fd = -1;
+			ccr_rw_map_insert(&cmap_sid2sp_drone,sock_id,(uint64_t)sock_pair);
+		}
+		//BKGGKDD;
+		if(sock_role.direction == ROLE_SEND){
+			if(sock_pair->sock_sen_fd != -1){
+				pthread_mutex_lock(&mut_printf);
+				printf("[WAITING_TF_THREAD]****** E R R O R: sock id %d already has socket_send ******\n",sock_id);
+				pthread_mutex_unlock(&mut_printf);
+				continue;
+			}
+			sock_pair->sock_sen_fd = connfd;
+		}
+		else if(sock_role.direction == ROLE_RECV){
+			if(sock_pair->sock_rec_fd != -1){
+				pthread_mutex_lock(&mut_printf);
+				printf("[WAITING_TF_THREAD]****** E R R O R: sock id %d already has socket_rec ******\n",sock_id);
+				pthread_mutex_unlock(&mut_printf);
+				continue;
+			}
+			sock_pair->sock_rec_fd = connfd;
+		}
+		else{
+			pthread_mutex_lock(&mut_printf);
+			fprintf(stderr,"[WAITING_TF_THREAD] wrong pack, direction is neither 0 or 1\n");
+			pthread_mutex_unlock(&mut_printf);
+			continue;
+		}
+		
+		// if sock_pair has both sen and rec
+		if(sock_pair->sock_sen_fd != -1 && sock_pair->sock_rec_fd != -1){
+			sock_pair->id = sock_id;
+			sbuf_insert(&sbuf_4_drone_sp,(int64_t)sock_pair);
+			pthread_create(&tid,NULL,drone_thread,NULL);
+		}
+
+	}
+}
+
+// The worker thread that's responsible of connecting with kine server
+void * kine_thread(void * vargp){
 	rio_t rio;
 	char buf[MAXLINE];
 	uint64_t v;
 	client_info * ready_c_i_pt;
 	flighter_status * ready_f_s_pt;
 	flighter_op * ready_f_o_pt;
-	int n;
+	int n,i;
 	int rec_bytes;
 	int flags;
 
 	pthread_detach(pthread_self());
-	socklen_t clientlen;
-	int connfd,connfd_rec,connfd_sen;
-	struct sockaddr_storage clientaddr;
+	int connfd_rec,connfd_sen;
+	s_server_pack * ready_pack_pt;
+	int empty;
+	int64_t item;
+	int local_thread_id;
+	socket_pair * sock_pair;
+	int ready_client_id;
 
-	s_server_pack * pack_pt;
-	socket_role * role;
 #ifdef SINGLE_ROOM_DEBUG
 	struct timeval srd_tv;
 	long long srd_start,srd_current;
 	double srd_secs;
 #endif
 
-	pack_pt = (s_server_pack *)malloc(sizeof(s_server_pack));
-	role = (socket_role *)malloc(sizeof(socket_role));	
+	ready_pack_pt = (s_server_pack *)malloc(sizeof(s_server_pack));
 
-	clientlen = sizeof(struct sockaddr_storage);
-restart_s_server_thread:
-
-	if(S_SERVER_WORK){
-		connfd = accept(sserver_listenfd,(SA *)&clientaddr,&clientlen);
-		printf("[CONNECTING_S_SERVER_THREAD]Simulink Server connected!\n");		
-
-		// set fd to be nonblock
-		flags = fcntl(connfd,F_GETFL,0);
-		fcntl(connfd,F_SETFL,flags | O_NONBLOCK);
-
-		rio_readinitb(&rio,connfd);
-		rec_bytes = rio_readnb(&rio,role,sizeof(socket_role),0);
-		if(rec_bytes < sizeof(socket_role)){
-			printf("****** E R R O R: timeout in connecting to simulink server ******\nrestart connecting_s_server_thread\n");
-			goto restart_s_server_thread;
-		}
-
-		//REC_BYTES_CHECK(rec_bytes,sizeof(socket_role),"****** E R R O R: timeout in connecting to s server ******\n");
-		if(role->type == ROLE_SEND){
-			connfd_sen = connfd;
-			connfd = accept(sserver_listenfd,(SA *)&clientaddr,&clientlen);
-			
-			// set fd to be nonblock
-			flags = fcntl(connfd,F_GETFL,0);
-			fcntl(connfd,F_SETFL,flags | O_NONBLOCK);
-
-			connfd_rec = connfd;
-			rio_readinitb(&rio,connfd_rec);
-			rec_bytes = rio_readnb(&rio,role,sizeof(socket_role),0);
-		}
-		else if(role->type == ROLE_RECV){
-			connfd_rec = connfd;
-			connfd_sen = accept(sserver_listenfd,(SA *)&clientaddr,&clientlen);
-	
-			// set fd to be nonblock
-			flags = fcntl(connfd_sen,F_GETFL,0);
-			fcntl(connfd,F_SETFL,flags | O_NONBLOCK);
-
-
-			rio_readinitb(&rio,connfd_sen);
-		 	rec_bytes = rio_readnb(&rio,role,sizeof(socket_role),0);
-		}
-		else{
-			pthread_mutex_lock(&mut_printf);
-			fprintf(stderr,"[CONNECTING_S_SERVER_THREAD] wrong pack\n");
-			pthread_mutex_unlock(&mut_printf);
-			pthread_exit(NULL);
-		}
-		if(rec_bytes < sizeof(socket_role)){
-			printf("****** E R R O R: timeout in connecting to simulink server ******\nrestart connecting_s_server_thread\n");
-			goto restart_s_server_thread;
-		}
-		rio_readinitb(&rio,connfd_rec);
-	}
+	item = sbuf_remove(&sbuf_4_kine_sp);
+	sock_pair = (socket_pair *)item;
+	connfd_rec = sock_pair->sock_rec_fd;
+	connfd_sen = sock_pair->sock_sen_fd;
+	local_thread_id = sock_pair->id;
+	rio_readinitb(&rio,connfd_rec);
 
 	pthread_mutex_lock(&mut_printf);
-	printf("[CONNECTING_S_SERVER_THREAD] simulink connected\n");
-	pthread_mutex_unlock(&mut_printf);
+	printf("[KINE_THREAD] kine server %d connected\n",local_thread_id);
+	pthread_mutex_unlock(&mut_printf);	
+
 
 
 	while(1){
-		pthread_mutex_lock(&mut_s_server);
-		while(ready_client_id == 0){
-			pthread_cond_wait(&cond_s_server,&mut_s_server);
+		empty = 1;	
+		pthread_mutex_lock(&mut_kine);
+		do{
+			// check if there is any client available
+			for(i = 0; i < MAX_KINE_N;i++){
+				if(ready_client_ids[i] != 0){
+					empty = 0;
+					ready_client_id = ready_client_ids[i];
+					ready_client_ids[i] = 0;
+					break;
+				}
+			}
+			if(empty == 1){
+				pthread_cond_wait(&cond_kine,&mut_kine);
+			}	
 		}
+		while(empty == 1);
+		// removed one client_id
+		pthread_cond_broadcast(&cond_kine);
+		pthread_mutex_unlock(&mut_kine);
+			
 		pthread_mutex_lock(&mut_printf);
 #ifdef SINGLE_ROOM_DEBUG
 	gettimeofday(&srd_tv,NULL);
 	srd_start = TV_TO_MSEC(srd_tv);
 #endif	
-		printf("[CONNECTING_S_SERVER_THREAD] start working for client %d\n",ready_client_id);
-		pthread_mutex_unlock(&mut_printf);
-
 		ccr_rw_map_query(&cmap_cid2cinfo,ready_client_id,&v);
 		ready_c_i_pt = (client_info *)v;
 		ready_f_s_pt = &(ready_c_i_pt->fos->s);
 		ready_f_o_pt = &(ready_c_i_pt->fos->op);
+	
+		memcpy(&(ready_pack_pt->p.x),&(ready_f_s_pt->x),sizeof(int32_t)*12);
+		memcpy(&(ready_pack_pt->o.pitch),&(ready_f_o_pt->pitch),sizeof(int32_t)*5);
+		ready_pack_pt->o.steps = ready_c_i_pt->current_steps;
+	
+		printf("[KINE_THREAD %d] working posture of tic[%d]: %d %d %d %d %d %d %d %d %d %d %d %d\n",local_thread_id,ready_pack_pt->p.tic,ready_pack_pt->p.x,ready_pack_pt->p.y,ready_pack_pt->p.z,
+				ready_pack_pt->p.u,ready_pack_pt->p.v,ready_pack_pt->p.w,ready_pack_pt->p.vx,ready_pack_pt->p.vy,ready_pack_pt->p.vz,
+				ready_pack_pt->p.vu,ready_pack_pt->p.vv,ready_pack_pt->p.vw);
+		pthread_mutex_unlock(&mut_printf);
 
+		rio_writen(connfd_sen,(char *)ready_pack_pt,sizeof(s_server_pack));
 		
-		buf[0] = '\0';
-		if(S_SERVER_WORK){
-			memcpy(&(pack_pt->p.x),&(ready_f_s_pt->x),sizeof(int32_t)*12);
-			/*pack_pt->p.x = ready_f_s_pt->x;
-			pack_pt->p.y = ready_f_s_pt->y;
-			pack_pt->p.z = ready_f_s_pt->z;
-			pack_pt->p.u = ready_f_s_pt->u;
-			pack_pt->p.v = ready_f_s_pt->v;
-			pack_pt->p.w = ready_f_s_pt->w;*/
-			memcpy(&(pack_pt->o.pitch),&(ready_f_o_pt->pitch),sizeof(int32_t)*5);
-
-			pack_pt->o.steps = ready_c_i_pt->current_steps;
-			/*pack_pt->o.pitch = ready_f_o_pt->pitch;
-			pack_pt->o.roll = ready_f_o_pt->roll;
-			pack_pt->o.dir = ready_f_o_pt->direction;
-			pack_pt->o.acc = ready_f_o_pt->acceleration;
-			pack_pt->o.launch_weapon = ready_f_o_pt->launch_weapon;*/
-
-#ifdef SINGLE_ROOM_DEBUG
-	gettimeofday(&srd_tv,NULL);
-	srd_start = TV_TO_MSEC(srd_tv);
-#endif	
-			rio_writen(connfd_sen,(char *)pack_pt,sizeof(s_server_pack));
-			pthread_mutex_lock(&mut_printf);
-			printf("[CONNECTING_S_SERVER_THREAD] send: [posture]%d %d %d[op][steps%d] %d %d %d %d\n",pack_pt->p.x,pack_pt->p.y,pack_pt->p.z,
-				pack_pt->o.steps,pack_pt->o.roll,pack_pt->o.pitch,pack_pt->o.dir,pack_pt->o.acc);
-			pthread_mutex_unlock(&mut_printf);
-
-			rec_bytes = rio_readnb(&rio,(char *)&(pack_pt->p),sizeof(posture),0);
-			if(rec_bytes < sizeof(posture)){
-				printf("****** E R R O R: timeout in reading posture from simulink server *******\n restart connecting_s_server_thread\n");
-				pthread_cond_broadcast(&cond_s_server);
-				pthread_mutex_unlock(&mut_s_server);
-				goto restart_s_server_thread;
-			}
-
-			//REC_BYTES_CHECK(rec_bytes,sizeof(posture),"****** E R R O R: timeout in reading posture from s server ******\n");
-			
-#ifdef SINGLE_ROOM_DEBUG
-	gettimeofday(&srd_tv,NULL);
-	srd_current = TV_TO_MSEC(srd_tv);
-	srd_secs = (srd_current-srd_start)/1000.0;
-	pthread_mutex_lock(&mut_printf);
-	printf("\n\n[CONNECTING_S_SERVER_THREAD] ###SINGLE_ROOM_DEBUG MODE### SSERVER NET_READ TAKES TIME:%lf\n\n",srd_secs);
-	pthread_mutex_unlock(&mut_printf);
-#endif
-
-			pthread_mutex_lock(&mut_printf);
-			printf("[CONNECTING_S_SERVER_THREAD] receive: %d %d %d\n",pack_pt->p.x,pack_pt->p.y,pack_pt->p.z);
-			pthread_mutex_unlock(&mut_printf);
-
-			//TODO: according to ready_f_s_pt and ready_f_o_pt calculate a new status
-			//TODO: remember to add 1 in the tic of new status
-			memcpy(&(ready_f_s_pt->x),&(pack_pt->p.x),sizeof(int32_t)*12);
-		}
-		else{
-			ready_f_s_pt->x++;
-			ready_f_s_pt->y++;
-			ready_f_s_pt->z++;
+		rec_bytes = rio_readnb(&rio,(char *)&(ready_pack_pt->p),sizeof(posture),0);
+		if(rec_bytes < sizeof(posture)){
+			printf("****** E R R O R: timeout in reading posture from kine server,only received %d bytes *******\n delete this kine_thread require a new one\n flighter will stay in its old position\n\n\n",rec_bytes);
+			ready_f_s_pt->tic++;
+			pthread_exit(NULL);
 		}
 		ready_f_s_pt->tic++;
-		ready_client_id = 0;
-#ifdef SINGLE_ROOM_DEBUG
-	gettimeofday(&srd_tv,NULL);
-	srd_current = TV_TO_MSEC(srd_tv);
-	srd_secs = (srd_current-srd_start)/1000.0;
-	pthread_mutex_lock(&mut_printf);
-	printf("\n\n[CONNECTING_S_SERVER_THREAD] ###SINGLE_ROOM_DEBUG MODE### SSERVER WORK TAKES TIME:%lf\n\n",srd_secs);
-	pthread_mutex_unlock(&mut_printf);
-#endif
 
-		pthread_cond_broadcast(&cond_s_server);
-
-		pthread_mutex_unlock(&mut_s_server);
+		pthread_mutex_lock(&mut_printf);
+		printf("[KINE_THREAD %d] new posture of tic[%d]: %d %d %d %d %d %d %d %d %d %d %d %d\n",local_thread_id,ready_pack_pt->p.tic,ready_pack_pt->p.x,ready_pack_pt->p.y,ready_pack_pt->p.z,
+				ready_pack_pt->p.u,ready_pack_pt->p.v,ready_pack_pt->p.w,ready_pack_pt->p.vx,ready_pack_pt->p.vy,ready_pack_pt->p.vz,
+				ready_pack_pt->p.vu,ready_pack_pt->p.vv,ready_pack_pt->p.vw);
+		pthread_mutex_unlock(&mut_printf);
 	}
 }
+
+void * waiting_kine_thread(void * vargp){
+	rio_t rio;
+	char buf[MAXLINE];
+	socklen_t clientlen;
+	struct sockaddr_storage clientaddr;
+	socket_role sock_role;
+	int rec_bytes;
+	int flags;
+	socket_pair * sock_pair;
+	uint64_t sock_id,v;
+	int connfd;	
+	pthread_t tid;
+
+	clientlen = sizeof(struct sockaddr_storage);
+	pthread_detach(pthread_self());
+	// this thread listens for kine socket forever
+	while(1){
+		connfd = accept(sserver_listenfd,(SA *)&clientaddr,&clientlen);
+		pthread_mutex_lock(&mut_printf);
+		printf("[WAITING_KINE_THREAD] a socket has connected: connfd: %d\n",connfd);
+		pthread_mutex_unlock(&mut_printf);
+		// set fd to be nonblock
+		flags = fcntl(connfd,F_GETFL,0);
+		fcntl(connfd,F_SETFL,flags | O_NONBLOCK);
+		rio_readinitb(&rio,connfd);
+		rec_bytes = rio_readnb(&rio,&sock_role,sizeof(socket_role),0);
+		if(rec_bytes < sizeof(socket_role)){
+			pthread_mutex_lock(&mut_printf);
+			printf("[WAITING_KINE_THREAD]****** E R R O R: timeout in reading role from kine server ******\n");
+			pthread_mutex_unlock(&mut_printf);
+			continue;
+		}
+		sock_id = sock_role.id;
+		// check if this sock_id has corresponding sock_pair in storage
+		if(ccr_rw_map_query(&cmap_sid2sp_kine,sock_id,&v) == 0){
+			sock_pair = (socket_pair *)v;
+		}		
+		else{
+			// if not malloc it
+			sock_pair = (socket_pair *)malloc(sizeof(socket_pair));
+			sock_pair -> sock_sen_fd = -1;
+			sock_pair -> sock_rec_fd = -1;
+			ccr_rw_map_insert(&cmap_sid2sp_kine,sock_id,(uint64_t)sock_pair);
+		}
+		if(sock_role.direction == ROLE_SEND){
+			if(sock_pair->sock_sen_fd != -1){
+				pthread_mutex_lock(&mut_printf);
+				printf("[WAITING_KINE_THREAD]****** E R R O R: sock id %d already has socket_send ******\n",sock_id);
+				pthread_mutex_unlock(&mut_printf);
+				continue;
+			}
+			sock_pair->sock_sen_fd = connfd;
+		}
+		else if(sock_role.direction == ROLE_RECV){
+			if(sock_pair->sock_rec_fd != -1){
+				pthread_mutex_lock(&mut_printf);
+				printf("[WAITING_KINE_THREAD]****** E R R O R: sock id %d already has socket_rec ******\n",sock_id);
+				pthread_mutex_unlock(&mut_printf);
+				continue;
+			}
+			sock_pair->sock_rec_fd = connfd;
+		}
+		else{
+			pthread_mutex_lock(&mut_printf);
+			fprintf(stderr,"[WAITING_KINE_THREAD] wrong pack, direction is neither 0 or 1\n");
+			pthread_mutex_unlock(&mut_printf);
+			continue;
+		}
+		
+		// if sock_pair has both sen and rec
+		if(sock_pair->sock_sen_fd != -1 && sock_pair->sock_rec_fd != -1){
+			sock_pair->id = sock_id;
+			sbuf_insert(&sbuf_4_kine_sp,(int64_t)sock_pair);
+			pthread_create(&tid,NULL,kine_thread,NULL);
+		}
+
+	}
+}
+
+
+
 
 
 // client thread: wait until room_thread is ready
@@ -595,6 +648,7 @@ void * client_thread(void * vargp){
 	uint32_t net_destroyed_flighter_id;
 	uint32_t timestamp;
 	
+	int full;
 	int flags;	
 	
 	char * init_status_buffer;
@@ -816,14 +870,24 @@ void * client_thread(void * vargp){
 			pthread_mutex_unlock(&mut_printf);
 
 			// send status & op & notify simulink_server_thread that one of the clients has sent a
-			// fos to it
-			pthread_mutex_lock(&mut_s_server);
-			while(ready_client_id != 0){
-				pthread_cond_wait(&cond_s_server,&mut_s_server);
+			// fos to it	
+			full = 1;
+			pthread_mutex_lock(&mut_kine);
+			do{
+				for(i = 0; i < MAX_KINE_N;i++){
+					if(ready_client_ids[i] == 0){
+						full = 0;
+						ready_client_ids[i] = c_i_pt->id;
+						break;
+					}
+				}
+				if(full == 1){
+					pthread_cond_wait(&cond_kine,&mut_kine);
+				}
 			}
-			ready_client_id = c_i_pt->id;
-			pthread_cond_broadcast(&cond_s_server);
-			pthread_mutex_unlock(&mut_s_server);
+			while(full == 1);
+			pthread_cond_broadcast(&cond_kine);
+			pthread_mutex_unlock(&mut_kine);
 
 			pthread_mutex_lock(&mut_printf);
 			printf("[CLIENT_THREAD id %d] has asked s_server to work\n",c_i_pt->id);
@@ -1048,6 +1112,9 @@ void * room_thread(void * vargp){
 	int ge_n;
 	rio_t ge_rio;
 	int ge_flags; 
+	// ready_pack_pts full
+	int full;	
+	int old_tic;
 
 	match_record = (char *)malloc(MATCH_RECORD_MAX_SIZE);
 	mr_cursor = 0;
@@ -1384,20 +1451,31 @@ void * room_thread(void * vargp){
 		// it sets tf_ready_siganl to 1
 		if(r_i_pt->match_type == 0){
 			if(TARGET_FLIGHTER_WORK){
-				pthread_mutex_lock(&mut_tf);
-				while(ready_pack_pt != NULL){
-					pthread_cond_wait(&cond_tf,&mut_tf);
+				full = 1;
+				pthread_mutex_lock(&mut_drone);
+				do{
+					for(i = 0; i < MAX_DRONE_N;i++){
+						if(ready_pack_pts[i] == NULL){
+							full = 0;
+							pack_pt->o.steps = r_i_pt->simulation_steplength; 
+							pack_pt->p.tic = room_clock;
+							ready_pack_pts[i] = pack_pt;
+							break;
+						}
+					}
+					if(full == 1){
+						pthread_cond_wait(&cond_drone,&mut_drone);
+					}
 				}
+				while(full == 1);
+				pthread_cond_broadcast(&cond_drone);
+				pthread_mutex_unlock(&mut_drone);
+
 				pthread_mutex_lock(&mut_printf);
 				printf("[ROOM_THREAAD id %d] asking target flighter server to work\n",r_i_pt->room_id);
 				pthread_mutex_unlock(&mut_printf);
-				// steps
-				pack_pt->o.steps = r_i_pt->simulation_steplength; 
-				ready_pack_pt = pack_pt;
-				pthread_cond_broadcast(&cond_tf);
-				pthread_mutex_unlock(&mut_tf);
 				// waits for tf_thread to complete
-				while(ready_pack_pt != NULL){
+				while(pack_pt->p.tic != room_clock+1){
 					continue;
 				}
 				pthread_mutex_lock(&mut_printf);
@@ -1626,7 +1704,7 @@ void * room_thread(void * vargp){
 // main thread AKA waiting for room info thread
 int main(int argc,char * argv[]){
 	int roomserver_listenfd,connfd;
-	int v;
+	int i,v;
 	socklen_t clientlen;
 	struct sockaddr_storage clientaddr;
 	pthread_t tid;
@@ -1661,25 +1739,36 @@ int main(int argc,char * argv[]){
 #endif
 	sbuf_init(&sbuf_for_room_server,max_rooms);
 	sbuf_init(&sbuf_for_clients,max_clients);
-			
+	sbuf_init(&sbuf_4_drone_sp,MAX_DRONE_N);
+	sbuf_init(&sbuf_4_kine_sp,MAX_KINE_N);	
+		
 	ccr_rw_map_init(&cmap_cid2cinfo);
 	ccr_rw_map_init(&cmap_rid2rinfo);
+	ccr_rw_map_init(&cmap_sid2sp_drone);
+	ccr_rw_map_init(&cmap_sid2sp_kine);
+
 	ccr_ct_init(&cct_rooms);
 	ccr_ct_init(&cct_clients);
 
 	// mutex & cond for s_server
-	pthread_mutex_init(&mut_s_server,NULL);
-	pthread_cond_init(&cond_s_server,NULL);
-	ready_client_id = 0;
+	pthread_mutex_init(&mut_kine,NULL);
+	pthread_cond_init(&cond_kine,NULL);
+	//ready_client_id = 0;
 	
 	// mutex & cond for controller
 	pthread_mutex_init(&mut_con,NULL);
 	pthread_cond_init(&cond_con,NULL);
 	// mutex & cond for target flighter server
-	pthread_mutex_init(&mut_tf,NULL);
-	pthread_cond_init(&cond_tf,NULL);
-	ready_pack_pt = NULL;	
-	tf_ready_signal = 1;
+	pthread_mutex_init(&mut_drone,NULL);
+	pthread_cond_init(&cond_drone,NULL);
+	
+	for(i = 0; i < MAX_DRONE_N;i++){
+		ready_pack_pts[i] = NULL;
+	}
+	for(i = 0; i < MAX_KINE_N;i++){
+		ready_client_ids[i] = 0;
+	}
+	//tf_ready_signal = 1;
 	// stdout
 	pthread_mutex_init(&mut_printf,NULL);
 
@@ -1690,12 +1779,12 @@ int main(int argc,char * argv[]){
 	pthread_create(&tid,NULL,waiting_for_clients_thread,NULL);
 
 	// the thread connects s_server
-	pthread_create(&tid,NULL,connecting_s_server_thread,NULL);
+	pthread_create(&tid,NULL,waiting_kine_thread,NULL);
 
 	// the thread connecting with director server A.K.A dao tiao tai
 	pthread_create(&tid,NULL,controller_thread,NULL);
 	
-	pthread_create(&tid,NULL,connecting_target_flighter_thread,NULL);
+	pthread_create(&tid,NULL,waiting_tf_thread,NULL);
 
 	// UI
 	pthread_create(&tid,NULL,ui_thread,NULL);

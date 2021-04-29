@@ -8,6 +8,8 @@
 #define _FLIGHTER_H
 #define ROLE_SEND 0
 #define ROLE_RECV 1
+#define TYPE_DRONE 0
+#define TYPE_KINE 1
 
 #define STR_LEN 64
 // flight operation: sent by clients to this server
@@ -41,6 +43,7 @@ typedef struct _posture{
 	int32_t vu;
 	int32_t vv;
 	int32_t vw;
+	int32_t tic;
 } posture;
 
 typedef struct _operation{
@@ -58,11 +61,14 @@ typedef struct _s_server_pack{
 } s_server_pack;
 
 typedef struct _socket_role{
+	int32_t type; // 0 drone 1 kinetics
+	int32_t tag; // I don't care
 	int32_t id;
-	int32_t type; // 0 send 1 recv 
+	int32_t direction; // 0 send (from me) 1 recv (from the other side) 
 } socket_role;
 
 typedef struct _socket_pair{
+	int id;
 	int sock_sen_fd;
 	int sock_rec_fd;
 } socket_pair;
