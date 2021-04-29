@@ -327,6 +327,8 @@ void * drone_thread(void * vargp){
 		if(rec_bytes < sizeof(posture)){
 			printf("****** E R R O R: timeout in reading posture from target flighter server,only received %d bytes *******\n delete this drone_thread require a new one\n target flighter will stay in its old position\n\n\n",rec_bytes);
 			ready_pack_pt->p.tic++;
+			sock_pair->sock_sen_fd = -1;
+			sock_pair->sock_rec_fd = -1;
 			pthread_exit(NULL);
 		}
 		ready_pack_pt->p.tic++;
@@ -521,6 +523,8 @@ void * kine_thread(void * vargp){
 		if(rec_bytes < sizeof(posture)){
 			printf("****** E R R O R: timeout in reading posture from kine server,only received %d bytes *******\n delete this kine_thread require a new one\n flighter will stay in its old position\n\n\n",rec_bytes);
 			ready_f_s_pt->tic++;
+			sock_pair->sock_sen_fd = -1;
+			sock_pair->sock_rec_fd = -1;
 			pthread_exit(NULL);
 		}
 		ready_f_s_pt->tic++;
