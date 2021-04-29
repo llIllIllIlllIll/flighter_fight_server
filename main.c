@@ -349,7 +349,7 @@ restart_tf_thread:
 		
 		rec_bytes = rio_readnb(&rio,(char *)&(ready_pack_pt->p),sizeof(posture),0);
 		if(rec_bytes < sizeof(posture)){
-			printf("****** E R R O R: timeout in reading posture from target flighter server *******\n restart connecting_tf_thread\n");
+			printf("****** E R R O R: timeout in reading posture from target flighter server,only received %d bytes *******\n restart connecting_tf_thread\n",rec_bytes);
 			pthread_cond_broadcast(&cond_tf);
 			pthread_mutex_unlock(&mut_tf);
 			goto restart_tf_thread;
@@ -496,6 +496,7 @@ restart_s_server_thread:
 			pack_pt->p.w = ready_f_s_pt->w;*/
 			memcpy(&(pack_pt->o.pitch),&(ready_f_o_pt->pitch),sizeof(int32_t)*5);
 
+			pack_pt->o.steps = ready_c_i_pt->current_steps;
 			/*pack_pt->o.pitch = ready_f_o_pt->pitch;
 			pack_pt->o.roll = ready_f_o_pt->roll;
 			pack_pt->o.dir = ready_f_o_pt->direction;
@@ -508,8 +509,8 @@ restart_s_server_thread:
 #endif	
 			rio_writen(connfd_sen,(char *)pack_pt,sizeof(s_server_pack));
 			pthread_mutex_lock(&mut_printf);
-			printf("[CONNECTING_S_SERVER_THREAD] send: [posture]%d %d %d[op] %d %d %d %d\n",pack_pt->p.x,pack_pt->p.y,pack_pt->p.z,
-				pack_pt->o.roll,pack_pt->o.pitch,pack_pt->o.dir,pack_pt->o.acc);
+			printf("[CONNECTING_S_SERVER_THREAD] send: [posture]%d %d %d[op][steps%d] %d %d %d %d\n",pack_pt->p.x,pack_pt->p.y,pack_pt->p.z,
+				pack_pt->o.steps,pack_pt->o.roll,pack_pt->o.pitch,pack_pt->o.dir,pack_pt->o.acc);
 			pthread_mutex_unlock(&mut_printf);
 
 			rec_bytes = rio_readnb(&rio,(char *)&(pack_pt->p),sizeof(posture),0);
@@ -1040,6 +1041,14 @@ void * room_thread(void * vargp){
 	// cmap mapping flighter_id to number of clients that judge this flight to be dead
 	ccr_rw_map cmap_fid2desct;
 
+	char ge_buf [MAXLINE];
+	int ge_clientfd;
+	cJSON * ge_res;
+	char * ge_json_string;
+	int ge_n;
+	rio_t ge_rio;
+	int ge_flags; 
+
 	match_record = (char *)malloc(MATCH_RECORD_MAX_SIZE);
 	mr_cursor = 0;
 
@@ -1117,7 +1126,7 @@ void * room_thread(void * vargp){
 		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 		r_i_pt->room_size = (uint32_t)atoi(buf_pt);
 		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
-		r_i_pt->simulation_steplength = (uint32_t)atoi(buf_pt);
+		r_i_pt->simulation_steplength = (uint32_t)100*atoi(buf_pt);
 		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 		r_i_pt->env_id = (uint32_t)atoi(buf_pt);
 		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
@@ -1197,7 +1206,9 @@ void * room_thread(void * vargp){
 				(*(r_i_pt->clients+i)).cmap_fid2desct = &cmap_fid2desct;
 				// init : 0
 				(*(r_i_pt->clients+i)).threads = 0;
-
+				// steps
+				(*(r_i_pt->clients+i)).current_steps = r_i_pt->simulation_steplength;
+				
 				ccr_rw_map_insert(&cmap_fid2desct,(*(r_i_pt->clients+i)).flighter_id,0);
 			}
 			else{
@@ -1288,13 +1299,39 @@ void * room_thread(void * vargp){
 				pthread_mutex_lock(&mut_printf);
 				printf("[ROOM_THREAD id %d] room timeout; thread exit\n",r_i_pt->room_id);
 				pthread_mutex_unlock(&mut_printf);
+				// tell room server this room end
+				ge_clientfd = open_clientfd(GAME_END_HOST,GAME_END_PORT);
+	        		if(ge_clientfd < 0)
+        	        		printf("[ROOM_THREAD %d]net error when connecting to endgame part\n",r_i_pt->room_id);
+        			ge_res = NULL;
+        			ge_res = cJSON_CreateObject();
+	        		cJSON_AddNumberToObject(ge_res,"id",r_i_pt->room_id);
+        			cJSON_AddNumberToObject(ge_res,"gameId",r_i_pt->match_id);
+        			cJSON_AddNumberToObject(ge_res,"winCampId",-1);
+				ge_json_string = cJSON_Print(ge_res);
+	       			sprintf(ge_buf,GAME_END_STRING_PATTERN,strlen(ge_json_string),ge_json_string);
+        			printf("[ROOM_THREAD %d] GAME END write content : %s\n",r_i_pt->room_id,ge_buf);
+        			rio_writen(ge_clientfd,ge_buf,strlen(ge_buf));
+        			ge_n = 0;
+        	       		rio_readinitb(&ge_rio,ge_clientfd);
+
+    	    			ge_flags = fcntl(ge_clientfd,F_GETFL,0);
+        			fcntl(ge_clientfd,F_SETFL,ge_flags | O_NONBLOCK);
+
+       		 		if((ge_n = rio_readnb(&ge_rio,ge_buf,MAXLINE,1000) > 0)){
+                			printf("[ROOM_THREAD %d]GAME END ROOM SERVER res:%s",r_i_pt->room_id,ge_buf);
+        			}
+
+
+
 				delete_room_from_cmap(&cmap_rid2rinfo,&cmap_cid2cinfo,r_i_pt);
 				// wake up clients
 				pthread_mutex_lock(&mut_clients);
 				pthread_cond_broadcast(&cond_clients);
 				pthread_mutex_unlock(&mut_clients);
 				ccr_ct_reset(&cct_sync_clients);
-			
+				
+
 				if(ccr_ct_dec(&cct_rooms) != 0){
 					exit(-1);
 				}
@@ -1354,7 +1391,8 @@ void * room_thread(void * vargp){
 				pthread_mutex_lock(&mut_printf);
 				printf("[ROOM_THREAAD id %d] asking target flighter server to work\n",r_i_pt->room_id);
 				pthread_mutex_unlock(&mut_printf);
-
+				// steps
+				pack_pt->o.steps = r_i_pt->simulation_steplength; 
 				ready_pack_pt = pack_pt;
 				pthread_cond_broadcast(&cond_tf);
 				pthread_mutex_unlock(&mut_tf);
@@ -1459,24 +1497,22 @@ void * room_thread(void * vargp){
 			// wait clients
 			sleep(1);	
 
-			char ge_buf [MAXLINE];
-        		int ge_clientfd = open_clientfd(GAME_END_HOST,GAME_END_PORT);
+        		ge_clientfd = open_clientfd(GAME_END_HOST,GAME_END_PORT);
         		if(ge_clientfd < 0)
                 		printf("[ROOM_THREAD %d]net error when connecting to endgame part\n",r_i_pt->room_id);
-        		cJSON * ge_res = NULL;
+        		ge_res = NULL;
         		ge_res = cJSON_CreateObject();
         		cJSON_AddNumberToObject(ge_res,"id",r_i_pt->room_id);
         		cJSON_AddNumberToObject(ge_res,"gameId",r_i_pt->match_id);
         		cJSON_AddNumberToObject(ge_res,"winCampId",alive_group_id);
-			char * ge_json_string = cJSON_Print(ge_res);
+			ge_json_string = cJSON_Print(ge_res);
        			sprintf(ge_buf,GAME_END_STRING_PATTERN,strlen(ge_json_string),ge_json_string);
         		printf("[ROOM_THREAD %d] GAME END write content : %s\n",r_i_pt->room_id,ge_buf);
         		rio_writen(ge_clientfd,ge_buf,strlen(ge_buf));
-        		int ge_n = 0;
-        		rio_t ge_rio;
-        		rio_readinitb(&ge_rio,ge_clientfd);
+        		ge_n = 0;
+        	        rio_readinitb(&ge_rio,ge_clientfd);
 
-        		int ge_flags = fcntl(ge_clientfd,F_GETFL,0);
+        		ge_flags = fcntl(ge_clientfd,F_GETFL,0);
         		fcntl(ge_clientfd,F_SETFL,ge_flags | O_NONBLOCK);
 
        		 	if((ge_n = rio_readnb(&ge_rio,ge_buf,MAXLINE,1000) > 0)){

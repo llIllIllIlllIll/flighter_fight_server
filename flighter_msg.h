@@ -49,6 +49,7 @@ typedef struct _operation{
 	int32_t dir;
 	int32_t acc;
 	int32_t launch_weapon;
+	int32_t steps;
 } operation;
 // pack only for communication with simulink
 typedef struct _s_server_pack{
@@ -232,6 +233,8 @@ typedef struct _client_info{
 	uint32_t os_size;
 	// cmap <flighter_id,number_of_clients_sentence_it_to_death>
 	ccr_rw_map * cmap_fid2desct;
+	// how many steps? ps. 0.01s per step
+	int32_t current_steps;
 } client_info;
 
 // single room information:

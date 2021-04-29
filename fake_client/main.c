@@ -45,10 +45,10 @@ void * fake_client_thread(void * vargs){
 	net_f_o.user_id = local_clientid;
 	//sleep(100);
 	rio_writen(clientfd,&net_f_o,sizeof(net_flighter_op));
-	rio_readnb(&rio,&net_m_s,sizeof(net_match_status));
-	rio_readnb(&rio,&net_f_s,sizeof(net_flighter_status));
+	rio_readnb(&rio,&net_m_s,sizeof(net_match_status),0);
+	rio_readnb(&rio,&net_f_s,sizeof(net_flighter_status),0);
 	printf("flighter status: %d %d %d\n",net_f_s.x,net_f_s.y,net_f_s.z);
-	rio_readnb(&rio,&net_f_s,sizeof(net_flighter_status));
+	rio_readnb(&rio,&net_f_s,sizeof(net_flighter_status),0);
 	printf("flighter status: %d %d %d\n",net_f_s.x,net_f_s.y,net_f_s.z);
 	pthread_mutex_lock(&mut_printf);
 	printf("client %d ready to begin official game process\n",local_clientid);
@@ -61,9 +61,9 @@ void * fake_client_thread(void * vargs){
 			//pthread_mutex_lock(&mut_net);	
 			//rio_writen(clientfd,&net_f_o,sizeof(net_flighter_op));
 			
-			if(i == 2*clocks-1){
+			if(i == 2*clocks-3){
 				net_f_o.detected_destroyed_flighters = 1;
-				net_d_f.id = 1;
+				net_d_f.id = 0;
 				rio_writen(clientfd,&net_f_o,sizeof(net_flighter_op));
 				rio_writen(clientfd,&net_d_f,sizeof(net_destroyed_flighter));
 			}
@@ -112,17 +112,17 @@ void * fake_client_thread(void * vargs){
 			while(n == 0){
 				n = rio_readlineb(&rio,buf,MAXLINE);
 			}*/
-			rio_readnb(&rio,&net_m_s,sizeof(net_match_status));
-			if(net_m_s.timestamp == -1 || net_m_s.winner_group != 0){
+			rio_readnb(&rio,&net_m_s,sizeof(net_match_status),0);
+			if(net_m_s.timestamp == -1 || net_m_s.winner_group != -1){
 				printf("\n\nMATCH END! WINNER GROUP %d TIMESTAMP %d\n\n",net_m_s.winner_group,net_m_s.timestamp);
 				pthread_exit(NULL);
 			}
 			else{
 				printf("[CLIENT %d] status of clock %d:\n",local_clientid,net_m_s.timestamp);
 			}
-			rio_readnb(&rio,&net_f_s,sizeof(net_flighter_status));
+			rio_readnb(&rio,&net_f_s,sizeof(net_flighter_status),0);
 			printf("flighter status: %d %d %d\n",net_f_s.x,net_f_s.y,net_f_s.z);
-			rio_readnb(&rio,&net_f_s,sizeof(net_flighter_status));
+			rio_readnb(&rio,&net_f_s,sizeof(net_flighter_status),0);
 			printf("flighter status: %d %d %d\n",net_f_s.x,net_f_s.y,net_f_s.z);
 			
 			//pthread_mutex_unlock(&mut_printf);
