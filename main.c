@@ -19,13 +19,17 @@
 // This macro is used to check return value of rio_readnb and rio_readlineb
 // and when dealing with rio_readlineb n should be set to 0
 #define REC_BYTES_CHECK(A,B,msg) if((A)<(B)){pthread_mutex_lock(&mut_printf);fprintf(stderr,msg);pthread_mutex_unlock(&mut_printf);pthread_exit(NULL);}
-#define ROOM_MAX_WAITING_MSEC (6000*1000)
+#define ROOM_MAX_WAITING_MSEC (60*1000)
 #define N_M_SIZE (sizeof(net_match_status))
 #define N_F_SIZE (sizeof(net_flighter_status))
 #define PI 3.1415926
 #define RAND_ANGLE() ((((double)(rand()%60))/60.0)*2*PI)
 // 4MB
 #define MATCH_RECORD_MAX_SIZE (1<<22)
+
+#define GAME_END_HOST "localhost"
+#define GAME_END_PORT "30609"
+#define GAME_END_STRING_PATTERN "POST /room/endGame HTTP/1.1\r\nContent-Type: application/json\r\nHost: 202.120.40.8:30609\r\nContent-Length:%d\r\n\r\n%s"
 //#define DEBUG
 // A BRIEF INTRODUCTION TO THIS SERVER:
 // 1. a main thread listens for room server to send room info
@@ -41,6 +45,8 @@ sbuf_t sbuf_for_clients;
 // roomid - room info
 ccr_rw_map cmap_cid2cinfo;
 ccr_rw_map cmap_rid2rinfo;
+
+
 
 int clients_listenfd;
 ccr_ct cct_rooms;
@@ -722,7 +728,7 @@ void * client_thread(void * vargp){
 
 			if(n < sizeof(net_flighter_op)){
 				pthread_mutex_lock(&mut_printf);
-				printf("[CLIENT_THREAD id %d] ****** E R R O R: timeout in reading op from client, only received %d bytes, this thread will exist ******\n",client_id,n);
+				printf("[CLIENT_THREAD id %d] ****** E R R O R: timeout in reading op from client, only received %d bytes, this thread will exit ******\n",client_id,n);
 				pthread_mutex_unlock(&mut_printf);
 			
 				c_i_pt->threads--;
@@ -766,7 +772,15 @@ void * client_thread(void * vargp){
 				// destroyed flighters
 				for(i = 0; i < net_destroyed_flighter_n;i++){
 					n = rio_readnb(&rio,&net_d_f,sizeof(net_destroyed_flighter),0);					
-					REC_BYTES_CHECK(n,sizeof(net_destroyed_flighter),"****** E R R O R: timeout in reading detected destroyed flighter from client ******\n");
+					if(n < sizeof(net_destroyed_flighter)){
+						pthread_mutex_lock(&mut_printf);
+						printf("[CLIENT_THREAD id %d] ****** E R R O R: timeout in reading detected destroyed flighter from client, only received %d bytes, this thread will exit ******\n",client_id,n);
+						pthread_mutex_unlock(&mut_printf);
+			
+						c_i_pt->threads--;
+						pthread_exit(NULL);
+					}
+					//REC_BYTES_CHECK(n,sizeof(net_destroyed_flighter),"****** E R R O R: timeout in reading detected destroyed flighter from client ******\n");
 					net_destroyed_flighter_id = net_d_f.id;
 					ccr_rw_map_query(cmap_fid2desct_pt,net_destroyed_flighter_id,&v);
 					ccr_rw_map_insert(cmap_fid2desct_pt,net_destroyed_flighter_id,v+1);
@@ -863,7 +877,7 @@ void * client_thread(void * vargp){
 				// check if the room has timed out
 				if(ccr_rw_map_query(&cmap_cid2cinfo,c_i_pt->id,&v) == -1){
 					pthread_mutex_lock(&mut_printf);
-					printf("[CLIENT_THREAD id %d] room timeout, client thread exist\n",c_i_pt->id);
+					printf("[CLIENT_THREAD id %d] room timeout, client thread exit\n",c_i_pt->id);
 					pthread_mutex_unlock(&mut_printf);
 
 					if(ccr_ct_dec(&cct_clients) != 0){
@@ -883,10 +897,11 @@ void * client_thread(void * vargp){
 			rio_writen(connfd,c_i_pt->overall_status,c_i_pt->os_size);
 			// TODO: end of game
 
-			if(((net_match_status *)c_i_pt->overall_status)->timestamp == -1 || ((net_match_status *)c_i_pt->overall_status)->winner_group != 0){				
-				
+			//printf("[CLIENT_THREAD id %d] game end ??? winner group %d; timestamp %d;thread will exist???\n",c_i_pt->id,((net_match_status *)c_i_pt->overall_status)->winner_group,((net_match_status *)c_i_pt->overall_status)->timestamp);
+		
+			if(((net_match_status *)c_i_pt->overall_status)->timestamp == -1 || ((net_match_status *)c_i_pt->overall_status)->winner_group != -1){	
 				pthread_mutex_lock(&mut_printf);
-				printf("[CLIENT_THREAD id %d] game end ; winner group %d; timestamp %d;thread will exist\n",c_i_pt->id,((net_match_status *)c_i_pt->overall_status)->winner_group,((net_match_status *)c_i_pt->overall_status)->timestamp);
+				printf("[CLIENT_THREAD id %d] game end ; winner group %d; timestamp %d;thread will exit\n",c_i_pt->id,((net_match_status *)c_i_pt->overall_status)->winner_group,((net_match_status *)c_i_pt->overall_status)->timestamp);
 				pthread_mutex_unlock(&mut_printf);
 
 				break;
@@ -1146,6 +1161,10 @@ void * room_thread(void * vargp){
 				(*(r_i_pt->clients+i)).sign = (uint32_t)atoi(buf_pt);
 				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 				(*(r_i_pt->clients+i)).flighter_id = (uint32_t)atoi(buf_pt);
+				//use user_id as fligheter_id
+				(*(r_i_pt->clients+i)).flighter_id = (*(r_i_pt->clients+i)).id;
+;
+
 				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 				
 				// TODO: delete this
@@ -1205,7 +1224,7 @@ void * room_thread(void * vargp){
 	net_m_s.flighters_n = (r_i_pt->match_type == 0?r_i_pt->size+1:r_i_pt->size);
 	// TODO: weapons_n should be really dealt with!
 	net_m_s.weapons_n = 0;
-	net_m_s.winner_group = 0;
+	net_m_s.winner_group = -1;
 	memcpy(buf,(char *)&net_m_s,sizeof(net_match_status));
 	cursor = sizeof(net_match_status);	
 	//printf("HS!\n");
@@ -1262,7 +1281,7 @@ void * room_thread(void * vargp){
 		while(k != r_i_pt->size){
 			gettimeofday(&tv,NULL);
 			current = TV_TO_MSEC(tv);
-			if(current - start > ROOM_MAX_WAITING_MSEC){
+			if(current - start > (room_clock == 0 ? (2.5*ROOM_MAX_WAITING_MSEC) :ROOM_MAX_WAITING_MSEC)){
 				// room waiting timeout: delete room info from cmap_rid2rinfo
 				// delete corresponding client info from cmap_cid2cinfo
 				// delete this room thread
@@ -1381,9 +1400,10 @@ void * room_thread(void * vargp){
 			ccr_rw_map_query(&cmap_fid2desct,0,&v);
 			if(v > r_i_pt->size /2){
 				game_should_end = 1;
-				alive_group_id = (*(r_i_pt->clients)).fos->s.group_id;
+				alive_group_id = (*(r_i_pt->clients)).fos->s.alive== 1 ? (*(r_i_pt->clients)).fos->s.group_id: -1;
 			}
 			else{
+
 				game_should_end = 0;
 			}
 
@@ -1437,7 +1457,32 @@ void * room_thread(void * vargp){
 			pthread_mutex_unlock(&mut_printf);
 			
 			// wait clients
-			sleep(3);		
+			sleep(1);	
+
+			char ge_buf [MAXLINE];
+        		int ge_clientfd = open_clientfd(GAME_END_HOST,GAME_END_PORT);
+        		if(ge_clientfd < 0)
+                		printf("[ROOM_THREAD %d]net error when connecting to endgame part\n",r_i_pt->room_id);
+        		cJSON * ge_res = NULL;
+        		ge_res = cJSON_CreateObject();
+        		cJSON_AddNumberToObject(ge_res,"id",r_i_pt->room_id);
+        		cJSON_AddNumberToObject(ge_res,"gameId",r_i_pt->match_id);
+        		cJSON_AddNumberToObject(ge_res,"winCampId",alive_group_id);
+			char * ge_json_string = cJSON_Print(ge_res);
+       			sprintf(ge_buf,GAME_END_STRING_PATTERN,strlen(ge_json_string),ge_json_string);
+        		printf("[ROOM_THREAD %d] GAME END write content : %s\n",r_i_pt->room_id,ge_buf);
+        		rio_writen(ge_clientfd,ge_buf,strlen(ge_buf));
+        		int ge_n = 0;
+        		rio_t ge_rio;
+        		rio_readinitb(&ge_rio,ge_clientfd);
+
+        		int ge_flags = fcntl(ge_clientfd,F_GETFL,0);
+        		fcntl(ge_clientfd,F_SETFL,ge_flags | O_NONBLOCK);
+
+       		 	if((ge_n = rio_readnb(&ge_rio,ge_buf,MAXLINE,1000) > 0)){
+                		printf("[ROOM_THREAD %d]GAME END ROOM SERVER res:%s",r_i_pt->room_id,ge_buf);
+        		}
+	
 			
 
 			// when room_clock moves on notify all clients to move on
@@ -1446,6 +1491,7 @@ void * room_thread(void * vargp){
 			pthread_cond_broadcast(&cond_clients);
 			pthread_mutex_unlock(&mut_clients);
 	
+			sleep(1);
 			ccr_ct_reset(&cct_sync_clients);
 			
 			if(ccr_ct_dec(&cct_rooms) != 0){
@@ -1462,7 +1508,7 @@ void * room_thread(void * vargp){
 		net_m_s.flighters_n = (r_i_pt->match_type == 0?r_i_pt->size+1:r_i_pt->size);
 		// TODO: weapons_n should be really dealt with!
 		net_m_s.weapons_n = 0;
-		net_m_s.winner_group = 0;
+		net_m_s.winner_group = -1;
 		memcpy(buf,(char *)&net_m_s,sizeof(net_match_status));
 		cursor = sizeof(net_match_status);	
 		// TODO: loaded_weapon_types
@@ -1502,7 +1548,7 @@ void * room_thread(void * vargp){
 		}
 
 		pthread_mutex_lock(&mut_printf);
-		printf("[ROOM_THREAAD id %d] room status of clock %d:\n%s\n",r_i_pt->room_id,room_clock,buf);
+		printf("[ROOM_THREAAD id %d] room status of clock %d:\n%s\n",net_m_s.timestamp,room_clock,buf);
 		pthread_mutex_unlock(&mut_printf);
 
 
