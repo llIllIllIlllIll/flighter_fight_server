@@ -62,6 +62,13 @@ typedef struct _socket_role{
 	int32_t type; // 0 send 1 recv 
 } socket_role;
 
+typedef struct _socket_pair{
+	int sock_sen_fd;
+	int sock_rec_fd;
+} socket_pair;
+
+
+// cky struct 
 typedef struct _destroyed_flighter_ids{
 	uint32_t * flighter_ids;
 	uint32_t size;
