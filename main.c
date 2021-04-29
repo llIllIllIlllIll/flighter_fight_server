@@ -329,6 +329,7 @@ void * drone_thread(void * vargp){
 			ready_pack_pt->p.tic++;
 			sock_pair->sock_sen_fd = -1;
 			sock_pair->sock_rec_fd = -1;
+			sleep(1);
 			pthread_exit(NULL);
 		}
 		ready_pack_pt->p.tic++;
@@ -525,6 +526,7 @@ void * kine_thread(void * vargp){
 			ready_f_s_pt->tic++;
 			sock_pair->sock_sen_fd = -1;
 			sock_pair->sock_rec_fd = -1;
+			sleep(1);
 			pthread_exit(NULL);
 		}
 		ready_f_s_pt->tic++;
@@ -1197,7 +1199,7 @@ void * room_thread(void * vargp){
 		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 		r_i_pt->room_size = (uint32_t)atoi(buf_pt);
 		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
-		r_i_pt->simulation_steplength = (uint32_t)atoi(buf_pt);
+		r_i_pt->simulation_steplength = (uint32_t)100*atoi(buf_pt);
 		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 		r_i_pt->env_id = (uint32_t)atoi(buf_pt);
 		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
@@ -1666,7 +1668,7 @@ void * room_thread(void * vargp){
 		}
 
 		pthread_mutex_lock(&mut_printf);
-		printf("[ROOM_THREAAD id %d] room status of clock %d:\n%s\n",net_m_s.timestamp,room_clock,buf);
+		printf("[ROOM_THREAAD id %d] room status of clock %d:\n%s\n",r_i_pt->room_id,room_clock,buf);
 		pthread_mutex_unlock(&mut_printf);
 
 
