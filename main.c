@@ -1199,7 +1199,7 @@ void * room_thread(void * vargp){
 		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 		r_i_pt->room_size = (uint32_t)atoi(buf_pt);
 		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
-		r_i_pt->simulation_steplength = (uint32_t)100*atoi(buf_pt);
+		r_i_pt->simulation_steplength = (uint32_t)atoi(buf_pt);
 		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 		r_i_pt->env_id = (uint32_t)atoi(buf_pt);
 		buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);

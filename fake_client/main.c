@@ -56,7 +56,7 @@ void * fake_client_thread(void * vargs){
 
 	for(i = 1; i <= clocks*2; i++){
 		if(i%2){
-			//sleep(1);
+			sleep(1);
 			memset(&net_f_o,0,sizeof(net_flighter_op));
 			//pthread_mutex_lock(&mut_net);	
 			//rio_writen(clientfd,&net_f_o,sizeof(net_flighter_op));
@@ -72,6 +72,8 @@ void * fake_client_thread(void * vargs){
 				//if(i > 105 && (local_clientid % 2)){
 				//	continue;
 				//}
+				net_f_o.op_pitch = 1;
+				net_f_o.op_roll = -1;
 				rio_writen(clientfd,&net_f_o,sizeof(net_flighter_op));
 			}
 			
