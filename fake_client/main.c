@@ -72,8 +72,9 @@ void * fake_client_thread(void * vargs){
 				//if(i > 105 && (local_clientid % 2)){
 				//	continue;
 				//}
-				net_f_o.op_pitch = 1;
-				net_f_o.op_roll = -1;
+				net_f_o.op_pitch =0;
+				net_f_o.op_roll =0;
+				net_f_o.op_acc = 1000;
 				rio_writen(clientfd,&net_f_o,sizeof(net_flighter_op));
 			}
 			

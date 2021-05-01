@@ -529,6 +529,9 @@ void * kine_thread(void * vargp){
 			sleep(1);
 			pthread_exit(NULL);
 		}
+		// result..
+		memcpy(&(ready_f_s_pt->x),&(ready_pack_pt->p.x),sizeof(int32_t)*12);
+		//memcpy(&(ready_f_o_pt->pitch),&(ready_pack_pt->o.pitch),sizeof(int32_t)*5);
 		ready_f_s_pt->tic++;
 
 		pthread_mutex_lock(&mut_printf);
