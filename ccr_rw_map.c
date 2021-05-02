@@ -119,7 +119,7 @@ int ccr_rw_map_iterate(ccr_rw_map * cmap,uint64_t * k, uint64_t * v){
 	return 1;
 }
 int ccr_rw_map_delete(ccr_rw_map *cmap, uint64_t k){
-	int ret = pthread_rwlock_rdlock(&cmap->rwlock);
+	int ret = pthread_rwlock_wrlock(&cmap->rwlock);
 	if(ret != 0){
 		fprintf(stderr,"Error when getting rdlock.\n");
 		return -2;

@@ -1629,8 +1629,8 @@ void * room_thread(void * vargp){
 			if(ccr_ct_dec(&cct_rooms) != 0){
 				exit(-1);
 			}
-					
-			assert(ccr_rw_map_delete(&cmap_rid2rinfo,r_i_pt->room_id) == 0);
+			delete_room_from_cmap(&cmap_rid2rinfo,&cmap_cid2cinfo,r_i_pt);
+			assert(ccr_rw_map_query(&cmap_rid2rinfo,r_i_pt->room_id,&v) == -1);
 			//assert(0);
 			pthread_exit(NULL);
 		}
