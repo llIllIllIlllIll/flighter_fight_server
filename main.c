@@ -262,7 +262,7 @@ void * drone_thread(void * vargp){
 	// same as above
 	int connfd_rec,connfd_sen,connfd;
 	struct sockaddr_storage clientaddr;
-	int rec_bytes;
+	int rec_bytes,wri_bytes;
 	socket_pair * sock_pair;
 	int64_t item;
 	// the array ready_pack_pts is empty
@@ -321,8 +321,17 @@ void * drone_thread(void * vargp){
 				ready_pack_pt->p.vu,ready_pack_pt->p.vv,ready_pack_pt->p.vw);
 		pthread_mutex_unlock(&mut_printf);
 
-		rio_writen(connfd_sen,(char *)ready_pack_pt,sizeof(s_server_pack));
-		
+		wri_bytes = rio_writen(connfd_sen,(char *)ready_pack_pt,sizeof(s_server_pack));
+		if(wri_bytes < sizeof(s_server_pack)){
+			printf("****** E R R O R: failed in writing to drone server *******\n delete this drone_thread require a new one\n target flighter will stay in its old position\n\n\n",rec_bytes);
+			ready_pack_pt->p.tic++;
+			sock_pair->sock_sen_fd = -1;
+			sock_pair->sock_rec_fd = -1;
+			sleep(1);
+			pthread_exit(NULL);
+
+		}		
+
 		rec_bytes = rio_readnb(&rio,(char *)&(ready_pack_pt->p),sizeof(posture),0);
 		if(rec_bytes < sizeof(posture)){
 			printf("****** E R R O R: timeout in reading posture from target flighter server,only received %d bytes *******\n delete this drone_thread require a new one\n target flighter will stay in its old position\n\n\n",rec_bytes);

@@ -38,8 +38,8 @@ ssize_t rio_writen(int fd,void *usrbuf,size_t n){
     char * bufp = usrbuf;
     while(nleft > 0){
         if((nwritten = write(fd,bufp,nleft))<=0){
-            if(errno = EINTR)
-                nwritten = 0;
+            if(errno == EINTR)
+               nwritten = 0;
             else
                 return -1;
         }
