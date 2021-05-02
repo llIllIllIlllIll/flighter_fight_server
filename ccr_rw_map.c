@@ -125,7 +125,11 @@ int ccr_rw_map_delete(ccr_rw_map *cmap, uint64_t k){
 		return -2;
 	}
 	slot * cur_slot = cmap->slots[HASH(k)], * prev_slot = NULL;
-	if(cur_slot->key == k){
+	if(cur_slot == NULL){
+		pthread_rwlock_unlock(&cmap->rwlock);
+		return -1;
+	}
+	else if(cur_slot->key == k){
 		cmap->slots[HASH(k)] = cur_slot->next;
 		// free(cur_slot);
 		// success
