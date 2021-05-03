@@ -270,6 +270,13 @@ void * drone_thread(void * vargp){
 	int i;
 	int local_thread_id;
 	s_server_pack * ready_pack_pt;
+	// time related
+	struct timeval tv;
+	struct timespec ts;
+	long long start,current;
+	s_server_pack heartbeat_pack;
+	// heartbeat pack is only sent if a drone is free for more than 3 seconds
+	// int is_heartbeat;
 #ifdef SINGLE_ROOM_DEBUG
 	struct timeval srd_tv;
 	long long srd_start,srd_current;
@@ -287,23 +294,41 @@ void * drone_thread(void * vargp){
 	pthread_mutex_lock(&mut_printf);
 	printf("[DRONE_THREAD] drone server %d connected\n",local_thread_id);
 	pthread_mutex_unlock(&mut_printf);	
-
+	
+	memset(&heartbeat_pack,0,sizeof(s_server_pack));
 
 	while(1){
+		gettimeofday(&tv,NULL);
+		start = TV_TO_MSEC(tv);
+		
 		empty = 1;	
 		pthread_mutex_lock(&mut_drone);
 		do{
-			// check if there is any pack available
-			for(i = 0; i < MAX_DRONE_N;i++){
-				if(ready_pack_pts[i] != NULL){
-					empty = 0;
-					ready_pack_pt = ready_pack_pts[i];
-					ready_pack_pts[i] = NULL;
-					break;
+			gettimeofday(&tv,NULL);
+			current = TV_TO_MSEC(tv);
+			if(current - start > 3*1000){
+				pthread_mutex_lock(&mut_printf);
+				printf("[DRONE_THREAD %d] drone thread idle; send heart-beat pack\n",local_thread_id);
+				pthread_mutex_unlock(&mut_printf);
+				//is_heartbeat = 1;		
+				ready_pack_pt = &heartbeat_pack;
+				empty = 0;
+			}				
+			else{
+				// check if there is any pack available
+				for(i = 0; i < MAX_DRONE_N;i++){
+					if(ready_pack_pts[i] != NULL){
+						empty = 0;
+						ready_pack_pt = ready_pack_pts[i];
+						ready_pack_pts[i] = NULL;
+						break;
+					}
 				}
 			}
 			if(empty == 1){
-				pthread_cond_wait(&cond_drone,&mut_drone);
+				ts.tv_sec = tv.tv_sec+1;
+				ts.tv_nsec = tv.tv_usec*1000;
+				pthread_cond_timedwait(&cond_drone,&mut_drone,&ts);		
 			}	
 		}
 		while(empty == 1);
@@ -1534,10 +1559,16 @@ void * room_thread(void * vargp){
 			ccr_rw_map_query(&cmap_fid2desct,0,&v);
 			if(v > r_i_pt->size /2){
 				game_should_end = 1;
+				// if both dead alive_group_id -1
+				// else if only drone dead alive_group_id depends on user's group_id
 				alive_group_id = (*(r_i_pt->clients)).fos->s.alive== 1 ? (*(r_i_pt->clients)).fos->s.group_id: -1;
 			}
+			else if((*(r_i_pt->clients)).fos->s.alive== 0){
+				// drone alive however client's flighter died
+				game_should_end = 1;
+				alive_group_id = 0;
+			}
 			else{
-
 				game_should_end = 0;
 			}
 
