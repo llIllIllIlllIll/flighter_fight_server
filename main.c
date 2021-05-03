@@ -34,6 +34,7 @@
 
 #define MAX_DRONE_N 10
 #define MAX_KINE_N 10
+#define MAX_SIMU_WAITING_MSEC (1*1000)
 
 #define BKGGKDD printf("BKGGKDD!\n");
 
@@ -348,7 +349,7 @@ void * drone_thread(void * vargp){
 
 		wri_bytes = rio_writen(connfd_sen,(char *)ready_pack_pt,sizeof(s_server_pack));
 		if(wri_bytes < sizeof(s_server_pack)){
-			printf("****** E R R O R: failed in writing to drone server *******\n delete this drone_thread require a new one\n target flighter will stay in its old position\n\n\n",rec_bytes);
+			printf("****** E R R O R: failed in writing to drone server %d *******\n delete this drone_thread require a new one\n target flighter will stay in its old position\n\n\n",local_thread_id,rec_bytes);
 			ready_pack_pt->p.tic++;
 			sock_pair->sock_sen_fd = -1;
 			sock_pair->sock_rec_fd = -1;
@@ -357,9 +358,9 @@ void * drone_thread(void * vargp){
 
 		}		
 
-		rec_bytes = rio_readnb(&rio,(char *)&(ready_pack_pt->p),sizeof(posture),0);
+		rec_bytes = rio_readnb(&rio,(char *)&(ready_pack_pt->p),sizeof(posture),MAX_SIMU_WAITING_MSEC);
 		if(rec_bytes < sizeof(posture)){
-			printf("****** E R R O R: timeout in reading posture from target flighter server,only received %d bytes *******\n delete this drone_thread require a new one\n target flighter will stay in its old position\n\n\n",rec_bytes);
+			printf("****** E R R O R: timeout in reading posture from target flighter server %d,only received %d bytes *******\n delete this drone_thread require a new one\n target flighter will stay in its old position\n\n\n",local_thread_id,rec_bytes);
 			ready_pack_pt->p.tic++;
 			sock_pair->sock_sen_fd = -1;
 			sock_pair->sock_rec_fd = -1;
@@ -478,7 +479,7 @@ void * kine_thread(void * vargp){
 	flighter_status * ready_f_s_pt;
 	flighter_op * ready_f_o_pt;
 	int n,i;
-	int rec_bytes;
+	int rec_bytes,wri_bytes;
 	int flags;
 
 	pthread_detach(pthread_self());
@@ -489,7 +490,13 @@ void * kine_thread(void * vargp){
 	int local_thread_id;
 	socket_pair * sock_pair;
 	int ready_client_id;
-
+	// time related
+	struct timeval tv;
+        struct timespec ts;
+        long long start,current;
+        s_server_pack heartbeat_pack;
+	// heartbeat pack is only sent if a drone is free for more than 3 seconds
+	int is_heartbeat;	
 #ifdef SINGLE_ROOM_DEBUG
 	struct timeval srd_tv;
 	long long srd_start,srd_current;
@@ -512,20 +519,38 @@ void * kine_thread(void * vargp){
 
 
 	while(1){
+		gettimeofday(&tv,NULL);
+                start = TV_TO_MSEC(tv);
+
 		empty = 1;	
 		pthread_mutex_lock(&mut_kine);
 		do{
+			is_heartbeat = 0;
+			gettimeofday(&tv,NULL);
+                        current = TV_TO_MSEC(tv);
+			if(current - start > 3*1000){
+                                pthread_mutex_lock(&mut_printf);
+                                printf("[KINE_THREAD %d] kine thread idle; send heart-beat pack\n",local_thread_id);
+                                pthread_mutex_unlock(&mut_printf);
+                                is_heartbeat = 1;             
+                                //ready_pack_pt = &heartbeat_pack;
+                                empty = 0;
+                        }
+			else{
 			// check if there is any client available
-			for(i = 0; i < MAX_KINE_N;i++){
-				if(ready_client_ids[i] != 0){
-					empty = 0;
-					ready_client_id = ready_client_ids[i];
-					ready_client_ids[i] = 0;
-					break;
+				for(i = 0; i < MAX_KINE_N;i++){
+					if(ready_client_ids[i] != 0){
+						empty = 0;
+						ready_client_id = ready_client_ids[i];
+						ready_client_ids[i] = 0;
+						break;
+					}
 				}
 			}
 			if(empty == 1){
-				pthread_cond_wait(&cond_kine,&mut_kine);
+				ts.tv_sec = tv.tv_sec+1;
+                                ts.tv_nsec = tv.tv_usec*1000;
+				pthread_cond_timedwait(&cond_kine,&mut_kine,&ts);
 			}	
 		}
 		while(empty == 1);
@@ -538,35 +563,53 @@ void * kine_thread(void * vargp){
 	gettimeofday(&srd_tv,NULL);
 	srd_start = TV_TO_MSEC(srd_tv);
 #endif	
-		ccr_rw_map_query(&cmap_cid2cinfo,ready_client_id,&v);
-		ready_c_i_pt = (client_info *)v;
-		ready_f_s_pt = &(ready_c_i_pt->fos->s);
-		ready_f_o_pt = &(ready_c_i_pt->fos->op);
+		if(is_heartbeat){
+			ready_pack_pt = &heartbeat_pack;
+		}
+		else{
+			ccr_rw_map_query(&cmap_cid2cinfo,ready_client_id,&v);
+			ready_c_i_pt = (client_info *)v;
+			ready_f_s_pt = &(ready_c_i_pt->fos->s);
+			ready_f_o_pt = &(ready_c_i_pt->fos->op);
 	
-		memcpy(&(ready_pack_pt->p.x),&(ready_f_s_pt->x),sizeof(int32_t)*12);
-		memcpy(&(ready_pack_pt->o.pitch),&(ready_f_o_pt->pitch),sizeof(int32_t)*5);
-		ready_pack_pt->o.steps = ready_c_i_pt->current_steps;
-	
+			memcpy(&(ready_pack_pt->p.x),&(ready_f_s_pt->x),sizeof(int32_t)*12);
+			memcpy(&(ready_pack_pt->o.pitch),&(ready_f_o_pt->pitch),sizeof(int32_t)*5);
+			ready_pack_pt->o.steps = ready_c_i_pt->current_steps;
+		}
 		printf("[KINE_THREAD %d] working posture of tic[%d]: %d %d %d %d %d %d %d %d %d %d %d %d\n",local_thread_id,ready_pack_pt->p.tic,ready_pack_pt->p.x,ready_pack_pt->p.y,ready_pack_pt->p.z,
 				ready_pack_pt->p.u,ready_pack_pt->p.v,ready_pack_pt->p.w,ready_pack_pt->p.vx,ready_pack_pt->p.vy,ready_pack_pt->p.vz,
 				ready_pack_pt->p.vu,ready_pack_pt->p.vv,ready_pack_pt->p.vw);
 		pthread_mutex_unlock(&mut_printf);
 
-		rio_writen(connfd_sen,(char *)ready_pack_pt,sizeof(s_server_pack));
+		wri_bytes = rio_writen(connfd_sen,(char *)ready_pack_pt,sizeof(s_server_pack));
+		if(wri_bytes < sizeof(s_server_pack)){
+			printf("****** E R R O R: failed in writing to kine server %d *******\n delete this kine_thread require a new one\n flighter will stay in its old position\n\n\n",local_thread_id);
+			if(is_heartbeat == 0)
+				ready_f_s_pt->tic++;
+			sock_pair->sock_sen_fd = -1;
+			sock_pair->sock_rec_fd = -1;
+			sleep(1);
+			pthread_exit(NULL);
+
+		}		
 		
-		rec_bytes = rio_readnb(&rio,(char *)&(ready_pack_pt->p),sizeof(posture),0);
+
+		rec_bytes = rio_readnb(&rio,(char *)&(ready_pack_pt->p),sizeof(posture),MAX_SIMU_WAITING_MSEC);
 		if(rec_bytes < sizeof(posture)){
-			printf("****** E R R O R: timeout in reading posture from kine server,only received %d bytes *******\n delete this kine_thread require a new one\n flighter will stay in its old position\n\n\n",rec_bytes);
-			ready_f_s_pt->tic++;
+			printf("****** E R R O R: timeout in reading posture from kine server %d,only received %d bytes *******\n delete this kine_thread require a new one\n flighter will stay in its old position\n\n\n",local_thread_id,rec_bytes);
+			if(is_heartbeat ==  0)
+				ready_f_s_pt->tic++;
 			sock_pair->sock_sen_fd = -1;
 			sock_pair->sock_rec_fd = -1;
 			sleep(1);
 			pthread_exit(NULL);
 		}
 		// result..
-		memcpy(&(ready_f_s_pt->x),&(ready_pack_pt->p.x),sizeof(int32_t)*12);
-		//memcpy(&(ready_f_o_pt->pitch),&(ready_pack_pt->o.pitch),sizeof(int32_t)*5);
-		ready_f_s_pt->tic++;
+		if(is_heartbeat == 0){
+			memcpy(&(ready_f_s_pt->x),&(ready_pack_pt->p.x),sizeof(int32_t)*12);
+			//memcpy(&(ready_f_o_pt->pitch),&(ready_pack_pt->o.pitch),sizeof(int32_t)*5);
+			ready_f_s_pt->tic++;
+		}
 
 		pthread_mutex_lock(&mut_printf);
 		printf("[KINE_THREAD %d] new posture of tic[%d]: %d %d %d %d %d %d %d %d %d %d %d %d\n",local_thread_id,ready_pack_pt->p.tic,ready_pack_pt->p.x,ready_pack_pt->p.y,ready_pack_pt->p.z,
