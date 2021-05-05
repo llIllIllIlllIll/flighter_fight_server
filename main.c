@@ -308,9 +308,9 @@ void * drone_thread(void * vargp){
 			gettimeofday(&tv,NULL);
 			current = TV_TO_MSEC(tv);
 			if(current - start > 3*1000){
-				pthread_mutex_lock(&mut_printf);
-				printf("[DRONE_THREAD %d] drone thread idle; send heart-beat pack\n",local_thread_id);
-				pthread_mutex_unlock(&mut_printf);
+				//pthread_mutex_lock(&mut_printf);
+				//printf("[DRONE_THREAD %d] drone thread idle; send heart-beat pack\n",local_thread_id);
+				//pthread_mutex_unlock(&mut_printf);
 				//is_heartbeat = 1;		
 				ready_pack_pt = &heartbeat_pack;
 				empty = 0;
@@ -337,15 +337,15 @@ void * drone_thread(void * vargp){
 		pthread_cond_broadcast(&cond_drone);
 		pthread_mutex_unlock(&mut_drone);
 			
-		pthread_mutex_lock(&mut_printf);
+		//pthread_mutex_lock(&mut_printf);
 #ifdef SINGLE_ROOM_DEBUG
 	gettimeofday(&srd_tv,NULL);
 	srd_start = TV_TO_MSEC(srd_tv);
 #endif	
-		printf("[DRONE_THREAD %d] working posture of tic[%d]: %d %d %d %d %d %d %d %d %d %d %d %d\n",local_thread_id,ready_pack_pt->p.tic,ready_pack_pt->p.x,ready_pack_pt->p.y,ready_pack_pt->p.z,
-				ready_pack_pt->p.u,ready_pack_pt->p.v,ready_pack_pt->p.w,ready_pack_pt->p.vx,ready_pack_pt->p.vy,ready_pack_pt->p.vz,
-				ready_pack_pt->p.vu,ready_pack_pt->p.vv,ready_pack_pt->p.vw);
-		pthread_mutex_unlock(&mut_printf);
+		//printf("[DRONE_THREAD %d] working posture of tic[%d]: %d %d %d %d %d %d %d %d %d %d %d %d\n",local_thread_id,ready_pack_pt->p.tic,ready_pack_pt->p.x,ready_pack_pt->p.y,ready_pack_pt->p.z,
+		//		ready_pack_pt->p.u,ready_pack_pt->p.v,ready_pack_pt->p.w,ready_pack_pt->p.vx,ready_pack_pt->p.vy,ready_pack_pt->p.vz,
+		//		ready_pack_pt->p.vu,ready_pack_pt->p.vv,ready_pack_pt->p.vw);
+		//pthread_mutex_unlock(&mut_printf);
 
 		wri_bytes = rio_writen(connfd_sen,(char *)ready_pack_pt,sizeof(s_server_pack));
 		if(wri_bytes < sizeof(s_server_pack)){
@@ -376,11 +376,11 @@ void * drone_thread(void * vargp){
 	printf("\n\n[CONNECTING_TARGET_FLIGHTER_THREAD] ###SINGLE_ROOM_DEBUG MODE### TARGET_FLIGHTER NET_READ TAKES TIME:%lf\n\n",srd_secs);
 	pthread_mutex_unlock(&mut_printf);
 #endif
-		pthread_mutex_lock(&mut_printf);
-		printf("[DRONE_THREAD %d] new posture of tic[%d]: %d %d %d %d %d %d %d %d %d %d %d %d\n",local_thread_id,ready_pack_pt->p.tic,ready_pack_pt->p.x,ready_pack_pt->p.y,ready_pack_pt->p.z,
-				ready_pack_pt->p.u,ready_pack_pt->p.v,ready_pack_pt->p.w,ready_pack_pt->p.vx,ready_pack_pt->p.vy,ready_pack_pt->p.vz,
-				ready_pack_pt->p.vu,ready_pack_pt->p.vv,ready_pack_pt->p.vw);
-		pthread_mutex_unlock(&mut_printf);
+		//pthread_mutex_lock(&mut_printf);
+		//printf("[DRONE_THREAD %d] new posture of tic[%d]: %d %d %d %d %d %d %d %d %d %d %d %d\n",local_thread_id,ready_pack_pt->p.tic,ready_pack_pt->p.x,ready_pack_pt->p.y,ready_pack_pt->p.z,
+		//		ready_pack_pt->p.u,ready_pack_pt->p.v,ready_pack_pt->p.w,ready_pack_pt->p.vx,ready_pack_pt->p.vy,ready_pack_pt->p.vz,
+		//		ready_pack_pt->p.vu,ready_pack_pt->p.vv,ready_pack_pt->p.vw);
+		//pthread_mutex_unlock(&mut_printf);
 	}
 }
 
@@ -529,9 +529,9 @@ void * kine_thread(void * vargp){
 			gettimeofday(&tv,NULL);
                         current = TV_TO_MSEC(tv);
 			if(current - start > 3*1000){
-                                pthread_mutex_lock(&mut_printf);
-                                printf("[KINE_THREAD %d] kine thread idle; send heart-beat pack\n",local_thread_id);
-                                pthread_mutex_unlock(&mut_printf);
+                                //pthread_mutex_lock(&mut_printf);
+                                //printf("[KINE_THREAD %d] kine thread idle; send heart-beat pack\n",local_thread_id);
+                                //pthread_mutex_unlock(&mut_printf);
                                 is_heartbeat = 1;             
                                 //ready_pack_pt = &heartbeat_pack;
                                 empty = 0;
@@ -558,7 +558,7 @@ void * kine_thread(void * vargp){
 		pthread_cond_broadcast(&cond_kine);
 		pthread_mutex_unlock(&mut_kine);
 			
-		pthread_mutex_lock(&mut_printf);
+		//pthread_mutex_lock(&mut_printf);
 #ifdef SINGLE_ROOM_DEBUG
 	gettimeofday(&srd_tv,NULL);
 	srd_start = TV_TO_MSEC(srd_tv);
@@ -576,10 +576,10 @@ void * kine_thread(void * vargp){
 			memcpy(&(ready_pack_pt->o.pitch),&(ready_f_o_pt->pitch),sizeof(int32_t)*5);
 			ready_pack_pt->o.steps = ready_c_i_pt->current_steps;
 		}
-		printf("[KINE_THREAD %d] working posture of tic[%d]: %d %d %d %d %d %d %d %d %d %d %d %d\n",local_thread_id,ready_pack_pt->p.tic,ready_pack_pt->p.x,ready_pack_pt->p.y,ready_pack_pt->p.z,
-				ready_pack_pt->p.u,ready_pack_pt->p.v,ready_pack_pt->p.w,ready_pack_pt->p.vx,ready_pack_pt->p.vy,ready_pack_pt->p.vz,
-				ready_pack_pt->p.vu,ready_pack_pt->p.vv,ready_pack_pt->p.vw);
-		pthread_mutex_unlock(&mut_printf);
+		//printf("[KINE_THREAD %d] working posture of tic[%d]: %d %d %d %d %d %d %d %d %d %d %d %d\n",local_thread_id,ready_pack_pt->p.tic,ready_pack_pt->p.x,ready_pack_pt->p.y,ready_pack_pt->p.z,
+		//		ready_pack_pt->p.u,ready_pack_pt->p.v,ready_pack_pt->p.w,ready_pack_pt->p.vx,ready_pack_pt->p.vy,ready_pack_pt->p.vz,
+		//		ready_pack_pt->p.vu,ready_pack_pt->p.vv,ready_pack_pt->p.vw);
+		//pthread_mutex_unlock(&mut_printf);
 
 		wri_bytes = rio_writen(connfd_sen,(char *)ready_pack_pt,sizeof(s_server_pack));
 		if(wri_bytes < sizeof(s_server_pack)){
@@ -611,11 +611,11 @@ void * kine_thread(void * vargp){
 			ready_f_s_pt->tic++;
 		}
 
-		pthread_mutex_lock(&mut_printf);
-		printf("[KINE_THREAD %d] new posture of tic[%d]: %d %d %d %d %d %d %d %d %d %d %d %d\n",local_thread_id,ready_pack_pt->p.tic,ready_pack_pt->p.x,ready_pack_pt->p.y,ready_pack_pt->p.z,
-				ready_pack_pt->p.u,ready_pack_pt->p.v,ready_pack_pt->p.w,ready_pack_pt->p.vx,ready_pack_pt->p.vy,ready_pack_pt->p.vz,
-				ready_pack_pt->p.vu,ready_pack_pt->p.vv,ready_pack_pt->p.vw);
-		pthread_mutex_unlock(&mut_printf);
+		//pthread_mutex_lock(&mut_printf);
+		//printf("[KINE_THREAD %d] new posture of tic[%d]: %d %d %d %d %d %d %d %d %d %d %d %d\n",local_thread_id,ready_pack_pt->p.tic,ready_pack_pt->p.x,ready_pack_pt->p.y,ready_pack_pt->p.z,
+		//		ready_pack_pt->p.u,ready_pack_pt->p.v,ready_pack_pt->p.w,ready_pack_pt->p.vx,ready_pack_pt->p.vy,ready_pack_pt->p.vz,
+		//		ready_pack_pt->p.vu,ready_pack_pt->p.vv,ready_pack_pt->p.vw);
+		//pthread_mutex_unlock(&mut_printf);
 	}
 }
 
@@ -995,7 +995,7 @@ void * client_thread(void * vargp){
 		pthread_mutex_unlock(&mut_printf);
 #endif
 			pthread_mutex_lock(&mut_printf);
-			printf("[CLIENT_THREAD id %d] client has finished status calculation for clock %d, ready to sync\n",c_i_pt->id,client_clock);
+			printf("[CLIENT_THREAD id %d] client has finished status calculation for clock %d;new postutre %d %d %d, ready to sync\n",c_i_pt->id,client_clock,f_s_pt->x,f_s_pt->y,f_s_pt->z);
 			pthread_mutex_unlock(&mut_printf);
 			
 			
@@ -1423,7 +1423,7 @@ void * room_thread(void * vargp){
 	else{
 		assert(r_i_pt->size == 2);
 		int smaller = 1;
-		if((*(r_i_pt->clients)).id < (*(r_i_pt->clients+1).id)){
+		if((*(r_i_pt->clients)).id < (*(r_i_pt->clients+1)).id){
 			smaller = -1;
 		}
 		for( i = 0; i < r_i_pt->size;i++){
@@ -1482,6 +1482,7 @@ void * room_thread(void * vargp){
 	        		cJSON_AddNumberToObject(ge_res,"id",r_i_pt->room_id);
         			cJSON_AddNumberToObject(ge_res,"gameId",r_i_pt->match_id);
         			cJSON_AddNumberToObject(ge_res,"winCampId",-1);
+				cJSON_AddNumberToObject(ge_res,"forceEnd",1);
 				ge_json_string = cJSON_Print(ge_res);
 	       			sprintf(ge_buf,GAME_END_STRING_PATTERN,strlen(ge_json_string),ge_json_string);
         			printf("[ROOM_THREAD %d] GAME END write content : %s\n",r_i_pt->room_id,ge_buf);
@@ -1586,7 +1587,8 @@ void * room_thread(void * vargp){
 					continue;
 				}
 				pthread_mutex_lock(&mut_printf);
-				printf("[ROOM_THREAAD id %d] target flighter server work completed\n",r_i_pt->room_id);
+				printf("[ROOM_THREAAD id %d] target flighter server work completed;new posture:%d %d %d\n",r_i_pt->room_id,pack_pt->p.x,
+					pack_pt->p.y,pack_pt->p.z);
 				pthread_mutex_unlock(&mut_printf);
 			}
 
@@ -1696,6 +1698,7 @@ void * room_thread(void * vargp){
         		cJSON_AddNumberToObject(ge_res,"id",r_i_pt->room_id);
         		cJSON_AddNumberToObject(ge_res,"gameId",r_i_pt->match_id);
         		cJSON_AddNumberToObject(ge_res,"winCampId",alive_group_id);
+			cJSON_AddNumberToObject(ge_res,"forceEnd",0);
 			ge_json_string = cJSON_Print(ge_res);
        			sprintf(ge_buf,GAME_END_STRING_PATTERN,strlen(ge_json_string),ge_json_string);
         		printf("[ROOM_THREAD %d] GAME END write content : %s\n",r_i_pt->room_id,ge_buf);

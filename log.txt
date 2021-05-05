@@ -1,0 +1,203 @@
+[UI_THREAD] start listening...
+[WAITING_KINE_THREAD] a socket has connected: connfd: 11
+[WAITING_KINE_THREAD] a socket has connected: connfd: 15
+[KINE_THREAD] kine server 1001 connected
+[WAITING_KINE_THREAD] a socket has connected: connfd: 16
+[WAITING_KINE_THREAD] a socket has connected: connfd: 17
+[KINE_THREAD] kine server 1002 connected
+[WAITING_TF_THREAD] a socket has connected: connfd: 12
+[WAITING_TF_THREAD] a socket has connected: connfd: 19
+[DRONE_THREAD] drone server 1 connected
+[WAITING_TF_THREAD] a socket has connected: connfd: 20
+[WAITING_TF_THREAD] a socket has connected: connfd: 21
+[DRONE_THREAD] drone server 2 connected
+****** E R R O R: timeout in reading posture from kine server 1001,only received 0 bytes *******
+ delete this kine_thread require a new one
+ flighter will stay in its old position
+
+
+****** E R R O R: timeout in reading posture from kine server 1002,only received 0 bytes *******
+ delete this kine_thread require a new one
+ flighter will stay in its old position
+
+
+****** E R R O R: timeout in reading posture from target flighter server 1,only received 0 bytes *******
+ delete this drone_thread require a new one
+ target flighter will stay in its old position
+
+
+****** E R R O R: timeout in reading posture from target flighter server 2,only received 0 bytes *******
+ delete this drone_thread require a new one
+ target flighter will stay in its old position
+
+
+[WAITING_KINE_THREAD] a socket has connected: connfd: 18
+[WAITING_KINE_THREAD] a socket has connected: connfd: 23
+[KINE_THREAD] kine server 1001 connected
+[WAITING_KINE_THREAD] a socket has connected: connfd: 24
+[WAITING_KINE_THREAD] a socket has connected: connfd: 25
+[KINE_THREAD] kine server 1002 connected
+[WAITING_TF_THREAD] a socket has connected: connfd: 22
+[WAITING_TF_THREAD] a socket has connected: connfd: 27
+[DRONE_THREAD] drone server 1 connected
+[WAITING_TF_THREAD] a socket has connected: connfd: 28
+[WAITING_TF_THREAD] a socket has connected: connfd: 29
+[DRONE_THREAD] drone server 2 connected
+[ROOM_THREAAD] room connected
+POST / HTTP/1.1
+[ROOM_THREAD]parsed all headers
+[ROOM_THRAD] ready to receive official room content...
+[buf content] [20 bytes] [supposed to be 20 bytes]255 1 100 0 0 1 459
+
+[client 0 info:]4 1 10.244.0.0 8080 1 1 1
+[ROOM_THREAAD id 255] room configuration completed, begin real work
+[CLIENT_THREAD id 4]client successfully connected
+[CLIENT_THREAD id 4]local variables initialized successfully
+[CLIENT_THREAD id 4] ready to read op from client
+[CLIENT_THREAD id 4]content read in op of clock 0:[END]
+[CLIENT_THREAD id 4]client thread has processed op 0 0 0 0 -1
+[CLIENT_THREAD id 4] has sent opeartion for clock 0
+[CLIENT_THREAD id 4] has asked s_server to work
+[CLIENT_THREAD id 4] client has finished status calculation for clock 0;new postutre 163800 161379 31647, ready to sync
+[ROOM_THREAAD id 255] room sync accomplished clock 0
+[ROOM_THREAAD id 255] asking target flighter server to work
+[ROOM_THREAAD id 255] target flighter server work completed;new posture:-163800 -161379 31647
+[ROOM_THREAD id 255] fid:4 destroy count:0
+[ROOM_THREAAD id 255] room status of clock 0:
+
+[CLIENT_THREAD id 4] sync has been accomplished; write back to client and move on
+[CLIENT_THREAD id 4] ready to read op from client
+[CLIENT_THREAD id 4] ****** E R R O R: timeout in reading op from client, only received 0 bytes, this thread will exit ******
+[ROOM_THREAD id 255] room timeout; thread exit
+[ROOM_THREAD 255] GAME END write content : POST /room/endGame HTTP/1.1
+Content-Type: application/json
+Host: 202.120.40.8:30609
+Content-Length:64
+
+{
+	"id":	255,
+	"gameId":	459,
+	"winCampId":	-1,
+	"forceEnd":	1
+}
+[ROOM_THREAD 255]GAME END ROOM SERVER res:HTTP/1.1 200 
+Vary: Origin
+Vary: Access-Control-Request-Method
+Vary: Access-Control-Request-Headers
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 1; mode=block
+Cache-Control: no-cache, no-store, max-age=0, must-revalidate
+Pragma: no-cache
+Expires: 0
+X-Frame-Options: DENY
+Content-Type: text/plain;charset=UTF-8
+Content-Length: 2
+Date: Wed, 05 May 2021 02:58:01 GMT
+
+ok****** E R R O R: timeout in reading posture from kine server 1001,only received 0 bytes *******
+ delete this kine_thread require a new one
+ flighter will stay in its old position
+
+
+****** E R R O R: timeout in reading posture from target flighter server 1,only received 0 bytes *******
+ delete this drone_thread require a new one
+ target flighter will stay in its old position
+
+
+****** E R R O R: timeout in reading posture from target flighter server 2,only received 0 bytes *******
+ delete this drone_thread require a new one
+ target flighter will stay in its old position
+
+
+****** E R R O R: timeout in reading posture from kine server 1002,only received 0 bytes *******
+ delete this kine_thread require a new one
+ flighter will stay in its old position
+
+
+[WAITING_KINE_THREAD] a socket has connected: connfd: 26
+[WAITING_KINE_THREAD] a socket has connected: connfd: 33
+[KINE_THREAD] kine server 1001 connected
+[WAITING_KINE_THREAD] a socket has connected: connfd: 34
+[WAITING_KINE_THREAD] a socket has connected: connfd: 35
+[KINE_THREAD] kine server 1002 connected
+[WAITING_TF_THREAD] a socket has connected: connfd: 30
+[WAITING_TF_THREAD] a socket has connected: connfd: 37
+[DRONE_THREAD] drone server 1 connected
+[WAITING_TF_THREAD] a socket has connected: connfd: 38
+[WAITING_TF_THREAD] a socket has connected: connfd: 39
+[DRONE_THREAD] drone server 2 connected
+[ROOM_THREAAD] room connected
+POST / HTTP/1.1
+[ROOM_THREAD]parsed all headers
+[ROOM_THRAD] ready to receive official room content...
+[buf content] [20 bytes] [supposed to be 20 bytes]256 1 100 0 0 1 460
+
+[client 0 info:]4 1 10.244.0.0 8080 1 1 1
+[ROOM_THREAAD id 256] room configuration completed, begin real work
+[CLIENT_THREAD id 4]client successfully connected
+[CLIENT_THREAD id 4]local variables initialized successfully
+[CLIENT_THREAD id 4] ready to read op from client
+[CLIENT_THREAD id 4]content read in op of clock 0:[END]
+[CLIENT_THREAD id 4]client thread has processed op 0 0 0 0 -1
+[CLIENT_THREAD id 4] has sent opeartion for clock 0
+[CLIENT_THREAD id 4] has asked s_server to work
+[CLIENT_THREAD id 4] client has finished status calculation for clock 0;new postutre 163800 161379 31647, ready to sync
+[ROOM_THREAAD id 256] room sync accomplished clock 0
+[ROOM_THREAAD id 256] asking target flighter server to work
+[ROOM_THREAAD id 256] target flighter server work completed;new posture:-163800 -161379 31647
+[ROOM_THREAD id 256] fid:4 destroy count:0
+[ROOM_THREAAD id 256] room status of clock 0:
+
+[CLIENT_THREAD id 4] sync has been accomplished; write back to client and move on
+[CLIENT_THREAD id 4] ready to read op from client
+[CLIENT_THREAD id 4] ****** E R R O R: timeout in reading op from client, only received 0 bytes, this thread will exit ******
+[ROOM_THREAD id 256] room timeout; thread exit
+[ROOM_THREAD 256] GAME END write content : POST /room/endGame HTTP/1.1
+Content-Type: application/json
+Host: 202.120.40.8:30609
+Content-Length:64
+
+{
+	"id":	256,
+	"gameId":	460,
+	"winCampId":	-1,
+	"forceEnd":	1
+}
+[ROOM_THREAD 256]GAME END ROOM SERVER res:HTTP/1.1 200 
+Vary: Origin
+Vary: Access-Control-Request-Method
+Vary: Access-Control-Request-Headers
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 1; mode=block
+Cache-Control: no-cache, no-store, max-age=0, must-revalidate
+Pragma: no-cache
+Expires: 0
+X-Frame-Options: DENY
+Content-Type: text/plain;charset=UTF-8
+Content-Length: 2
+Date: Wed, 05 May 2021 03:12:46 GMT
+
+ok[ROOM_THREAAD] room connected
+POST / HTTP/1.1
+[ROOM_THREAD]parsed all headers
+[ROOM_THRAD] ready to receive official room content...
+[buf content] [20 bytes] [supposed to be 20 bytes]257 1 100 0 0 1 461
+
+[client 0 info:]4 1 10.244.0.0 8080 1 1 1
+[ROOM_THREAAD id 257] room configuration completed, begin real work
+[ROOM_THREAD id 257] room timeout; thread exit
+[ROOM_THREAD 257] GAME END write content : POST /room/endGame HTTP/1.1
+Content-Type: application/json
+Host: 202.120.40.8:30609
+Content-Length:64
+
+{
+	"id":	257,
+	"gameId":	461,
+	"winCampId":	-1,
+	"forceEnd":	1
+}
+[ROOM_THREAD 257]GAME END ROOM SERVER res:HTTP/1.1 200 
+Vary: Origin
+Vary: Access-Control-Request-Method
+Vary:
