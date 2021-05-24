@@ -38,8 +38,8 @@ ssize_t rio_writen(int fd,void *usrbuf,size_t n){
     char * bufp = usrbuf;
     while(nleft > 0){
         if((nwritten = write(fd,bufp,nleft))<=0){
-            if(errno = EINTR)
-                nwritten = 0;
+            if(errno == EINTR)
+               nwritten = 0;
             else
                 return -1;
         }
@@ -187,17 +187,16 @@ int open_listenfd(char * port){
 }
 
 typedef struct{
-    int * buf;
+    int64_t * buf;
     int n;
     int front;
     int rear;
     sem_t mutex;
     sem_t slots;
     sem_t items;
-
 }sbuf_t;
 void sbuf_init(sbuf_t *sp,int n){
-    sp->buf = calloc(n,sizeof(int));
+    sp->buf = calloc(n,sizeof(int64_t));
     sp->n = n;
     sp->front = sp->rear = 0;
     sem_init(&sp->mutex,0,1);
@@ -207,15 +206,15 @@ void sbuf_init(sbuf_t *sp,int n){
 void sbuf_deinit(sbuf_t *sp){
     free(sp->buf);
 }
-void sbuf_insert(sbuf_t *sp,int item){
+void sbuf_insert(sbuf_t *sp,int64_t item){
     sem_wait(&sp->slots);
     sem_wait(&sp->mutex);
     sp->buf[(++sp->rear)%(sp->n)] = item;
     sem_post(&sp->mutex);
     sem_post(&sp->items);
 }
-int sbuf_remove(sbuf_t * sp){
-    int item;
+int64_t sbuf_remove(sbuf_t * sp){
+    int64_t item;
     sem_wait(&sp->items);
     sem_wait(&sp->mutex);
     item = sp->buf[(++sp->front)%(sp->n)];
