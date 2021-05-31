@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <assert.h>
+#include <signal.h>
 #define MOVE_AHEAD_IN_BUF(p) (strchr(p,' ')+1)
 #define S_SERVER_WORK 1
 #define TARGET_FLIGHTER_WORK 1
@@ -307,7 +308,7 @@ void * drone_thread(void * vargp){
 		do{
 			gettimeofday(&tv,NULL);
 			current = TV_TO_MSEC(tv);
-			if(current - start > 3*1000){
+			if(current - start > 1.5*1000){
 				//pthread_mutex_lock(&mut_printf);
 				//printf("[DRONE_THREAD %d] drone thread idle; send heart-beat pack\n",local_thread_id);
 				//pthread_mutex_unlock(&mut_printf);
@@ -528,7 +529,7 @@ void * kine_thread(void * vargp){
 			is_heartbeat = 0;
 			gettimeofday(&tv,NULL);
                         current = TV_TO_MSEC(tv);
-			if(current - start > 3*1000){
+			if(current - start > 1.5*1000){
                                 //pthread_mutex_lock(&mut_printf);
                                 //printf("[KINE_THREAD %d] kine thread idle; send heart-beat pack\n",local_thread_id);
                                 //pthread_mutex_unlock(&mut_printf);
@@ -1831,6 +1832,7 @@ void * room_thread(void * vargp){
 }
 // main thread AKA waiting for room info thread
 int main(int argc,char * argv[]){
+	signal(SIGPIPE,SIG_IGN);
 	int roomserver_listenfd,connfd;
 	int i,v;
 	socklen_t clientlen;
