@@ -1,5 +1,17 @@
 # flighter_fight_server
 ## Compile
-run compile.sh
+```shell
+./compile.sh
+```
+or
+```shell
+make
+```
 ## Run
-run run.sh
+```shell
+./run.sh
+```
+or if you want to keep the server restarting itself:
+```shell
+./restart.sh
+```
