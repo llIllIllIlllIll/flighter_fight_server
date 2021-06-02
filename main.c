@@ -35,6 +35,13 @@
 
 #define MAX_DRONE_N 10
 #define MAX_KINE_N 10
+// drone tag must be positive and less or equal to MAX_DRONE_TAG 
+#define MAX_DRONE_TAG 2
+// pool index
+#define TAG_2_POOL_INDEX(tag) ((tag)-1)
+#define MATCH_TYPE_2_POOL_INDEX(match_type) (((match_type) == 0)?(0):((match_type) == 3 ? 1: -1))
+
+
 #define MAX_SIMU_WAITING_MSEC (1*1000)
 
 #define BKGGKDD printf("BKGGKDD!\n");
@@ -83,7 +90,7 @@ pthread_cond_t cond_con;
 uint32_t ready_client_ids[MAX_KINE_N];
 
 // ready_pack_pt is used to tell connecting_tf_thread that one of the postures need update
-s_server_pack * ready_pack_pts[MAX_DRONE_N];
+s_server_pack * ready_pack_pts[MAX_DRONE_TAG][MAX_DRONE_N];
 // this signal tells room_thread that a new posture is calculated 
 //int tf_ready_signal;
 
@@ -279,6 +286,7 @@ void * drone_thread(void * vargp){
 	s_server_pack heartbeat_pack;
 	// heartbeat pack is only sent if a drone is free for more than 3 seconds
 	// int is_heartbeat;
+	int tag;
 #ifdef SINGLE_ROOM_DEBUG
 	struct timeval srd_tv;
 	long long srd_start,srd_current;
@@ -290,11 +298,12 @@ void * drone_thread(void * vargp){
 	connfd_rec = sock_pair->sock_rec_fd;
 	connfd_sen = sock_pair->sock_sen_fd;
 	local_thread_id = sock_pair->id;
+	tag = sock_pair->tag;
 	rio_readinitb(&rio,connfd_rec);
 
 	
 	pthread_mutex_lock(&mut_printf);
-	printf("[DRONE_THREAD] drone server %d connected\n",local_thread_id);
+	printf("[DRONE_THREAD] drone server id %d tag %d connected\n",local_thread_id,tag);
 	pthread_mutex_unlock(&mut_printf);	
 	
 	memset(&heartbeat_pack,0,sizeof(s_server_pack));
@@ -319,10 +328,10 @@ void * drone_thread(void * vargp){
 			else{
 				// check if there is any pack available
 				for(i = 0; i < MAX_DRONE_N;i++){
-					if(ready_pack_pts[i] != NULL){
+					if(ready_pack_pts[tag][i] != NULL){
 						empty = 0;
-						ready_pack_pt = ready_pack_pts[i];
-						ready_pack_pts[i] = NULL;
+						ready_pack_pt = ready_pack_pts[tag][i];
+						ready_pack_pts[tag][i] = NULL;
 						break;
 					}
 				}
@@ -399,6 +408,7 @@ void * waiting_tf_thread(void * vargp){
 	uint64_t sock_id,v;
 	int connfd;	
 	pthread_t tid;
+	int tag;
 
 	clientlen = sizeof(struct sockaddr_storage);
 	pthread_detach(pthread_self());
@@ -424,15 +434,23 @@ void * waiting_tf_thread(void * vargp){
 		}
 		//BKGGKDD;
 		sock_id = sock_role.id;
+		tag = sock_role.tag;
 		// check if this sock_id has corresponding sock_pair in storage
 		if(ccr_rw_map_query(&cmap_sid2sp_drone,sock_id,&v) == 0){
 			sock_pair = (socket_pair *)v;
+			if(sock_pair -> tag != tag){
+				pthread_mutex_lock(&mut_printf);
+				printf("[WAITING_TF_THREAD] ******* E R R O R: inconsistent sock tag ******\n");
+				pthread_mutex_unlock(&mut_printf);
+				continue;
+			}
 		}		
 		else{
 			// if not malloc it
 			sock_pair = (socket_pair *)malloc(sizeof(socket_pair));
 			sock_pair -> sock_sen_fd = -1;
 			sock_pair -> sock_rec_fd = -1;
+			sock_pair -> tag = -1;
 			ccr_rw_map_insert(&cmap_sid2sp_drone,sock_id,(uint64_t)sock_pair);
 		}
 		//BKGGKDD;
@@ -461,6 +479,7 @@ void * waiting_tf_thread(void * vargp){
 			continue;
 		}
 		
+		sock_pair -> tag = tag;
 		// if sock_pair has both sen and rec
 		if(sock_pair->sock_sen_fd != -1 && sock_pair->sock_rec_fd != -1){
 			sock_pair->id = sock_id;
@@ -1570,17 +1589,17 @@ void * room_thread(void * vargp){
 		// it sets tf_ready_signal to 0
 		// and when tf_thread finishes working
 		// it sets tf_ready_siganl to 1
-		if(r_i_pt->match_type == 0){
+		if(r_i_pt->match_type != 1){
 			if(TARGET_FLIGHTER_WORK){
 				full = 1;
 				pthread_mutex_lock(&mut_drone);
 				do{
 					for(i = 0; i < MAX_DRONE_N;i++){
-						if(ready_pack_pts[i] == NULL){
+						if(ready_pack_pts[MATCH_TYPE_2_POOL_INDEX(r_i_pt->match_type)][i] == NULL){
 							full = 0;
 							pack_pt->o.steps = r_i_pt->simulation_steplength; 
 							pack_pt->p.tic = room_clock;
-							ready_pack_pts[i] = pack_pt;
+							ready_pack_pts[MATCH_TYPE_2_POOL_INDEX(r_i_pt->match_type)][i] = pack_pt;
 							break;
 						}
 					}
@@ -1834,7 +1853,7 @@ void * room_thread(void * vargp){
 int main(int argc,char * argv[]){
 	signal(SIGPIPE,SIG_IGN);
 	int roomserver_listenfd,connfd;
-	int i,v;
+	int i,j,v;
 	socklen_t clientlen;
 	struct sockaddr_storage clientaddr;
 	pthread_t tid;
@@ -1892,8 +1911,10 @@ int main(int argc,char * argv[]){
 	pthread_mutex_init(&mut_drone,NULL);
 	pthread_cond_init(&cond_drone,NULL);
 	
-	for(i = 0; i < MAX_DRONE_N;i++){
-		ready_pack_pts[i] = NULL;
+	for(j = 0; j < MAX_DRONE_TAG;j++){
+		for(i = 0; i < MAX_DRONE_N;i++){
+			ready_pack_pts[j][i] = NULL;
+		}
 	}
 	for(i = 0; i < MAX_KINE_N;i++){
 		ready_client_ids[i] = 0;
