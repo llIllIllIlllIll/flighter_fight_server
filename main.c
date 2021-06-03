@@ -229,8 +229,8 @@ void * controller_thread(void * vargp){
 				buf_pt = buf;
 				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
 				con_signal = atoi(buf_pt);
-				buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
-				reload_flighters_n = atoi(buf);
+				//buf_pt = MOVE_AHEAD_IN_BUF(buf_pt);
+				//reload_flighters_n = atoi(buf);
 				//TODO: currently ignore reload flighters signal
 				//fix later
 
@@ -328,10 +328,10 @@ void * drone_thread(void * vargp){
 			else{
 				// check if there is any pack available
 				for(i = 0; i < MAX_DRONE_N;i++){
-					if(ready_pack_pts[tag][i] != NULL){
+					if(ready_pack_pts[TAG_2_POOL_INDEX(tag)][i] != NULL){
 						empty = 0;
-						ready_pack_pt = ready_pack_pts[tag][i];
-						ready_pack_pts[tag][i] = NULL;
+						ready_pack_pt = ready_pack_pts[TAG_2_POOL_INDEX(tag)][i];
+						ready_pack_pts[TAG_2_POOL_INDEX(tag)][i] = NULL;
 						break;
 					}
 				}
@@ -1414,7 +1414,7 @@ void * room_thread(void * vargp){
 	// after configuration for room set init status
 	net_m_s.timestamp = room_clock;
 	net_m_s.steplength = r_i_pt->simulation_steplength;
-	net_m_s.flighters_n = (r_i_pt->match_type == 0?r_i_pt->size+1:r_i_pt->size);
+	net_m_s.flighters_n = (r_i_pt->match_type == 0 || r_i_pt->match_type == 3?r_i_pt->size+1:r_i_pt->size);
 	// TODO: weapons_n should be really dealt with!
 	net_m_s.weapons_n = 0;
 	net_m_s.winner_group = -1;
@@ -1422,7 +1422,7 @@ void * room_thread(void * vargp){
 	cursor = sizeof(net_match_status);	
 	//printf("HS!\n");
 	// TODO: loaded_weapon_types
-	if(r_i_pt->match_type == 0){
+	if(r_i_pt->match_type == 0 || r_i_pt->match_type == 3){
 		assert(r_i_pt->size == 1);
 		net_f_s.user_id = tf_id;
 		pack_pt->p.x = -163.8*1000;
@@ -1430,7 +1430,7 @@ void * room_thread(void * vargp){
 		pack_pt->p.z = 31.647*1000;
 		pack_pt->p.u = 0;
 		pack_pt->p.v = 0;
-		pack_pt->p.w = -180*1000;
+		pack_pt->p.w = -3.14159*1000;
 		memcpy((char *)&(net_f_s.x),(char *)&(pack_pt->p.x),sizeof(int32_t)*12);
 		net_f_s.loaded_weapon_types = 0;
 		memcpy(buf+cursor,(char *)&net_f_s,sizeof(net_flighter_status));
@@ -1653,7 +1653,7 @@ void * room_thread(void * vargp){
 		// 2. decide if game ends
 		alive_group_id = -1;
 		game_should_end = 1;
-		if(r_i_pt->match_type == 0){
+		if(r_i_pt->match_type != 1){
 			ccr_rw_map_query(&cmap_fid2desct,0,&v);
 			if(v > r_i_pt->size /2){
 				game_should_end = 1;
@@ -1767,7 +1767,7 @@ void * room_thread(void * vargp){
 		cursor = 0;
 		net_m_s.timestamp = room_clock;
 		net_m_s.steplength = r_i_pt->simulation_steplength;
-		net_m_s.flighters_n = (r_i_pt->match_type == 0?r_i_pt->size+1:r_i_pt->size);
+		net_m_s.flighters_n = (r_i_pt->match_type == 0 || r_i_pt->match_type == 3?r_i_pt->size+1:r_i_pt->size);
 		// TODO: weapons_n should be really dealt with!
 		net_m_s.weapons_n = 0;
 		net_m_s.winner_group = -1;
@@ -1784,7 +1784,7 @@ void * room_thread(void * vargp){
 			cursor += sizeof(net_flighter_status);
 		}
 		// practise mode: add target_flighter
-		if(r_i_pt->match_type == 0){
+		if(r_i_pt->match_type != 1){
 			net_f_s.user_id = tf_id;
 			memcpy((char *)&(net_f_s.x),(char *)&(pack_pt->p.x),sizeof(int32_t)*12);
 			net_f_s.loaded_weapon_types = 0;
