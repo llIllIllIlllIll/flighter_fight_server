@@ -11,6 +11,12 @@
 #define TYPE_DRONE 0
 #define TYPE_KINE 1
 
+#define DT_NORMAL 0
+#define DT_PAUSE 1
+#define DT_CONTINUE 2
+#define DT_SINGLESTEP 3
+
+
 #define STR_LEN 64
 // flight operation: sent by clients to this server
 // launch_weapon: 0 no 1 launch a missile 2 shoot a bullet 3 both
@@ -62,13 +68,14 @@ typedef struct _s_server_pack{
 
 typedef struct _socket_role{
 	int32_t type; // 0 drone 1 kinetics
-	int32_t tag; // I don't care
+	int32_t tag; // 0 kinetics 1 still-drone 2 moving-target-drone
 	int32_t id;
 	int32_t direction; // 0 send (from me) 1 recv (from the other side) 
 } socket_role;
 
 typedef struct _socket_pair{
 	int id;
+	int tag;
 	int sock_sen_fd;
 	int sock_rec_fd;
 } socket_pair;
@@ -290,9 +297,8 @@ typedef struct _flighter_weapon_load{
 // dao tiao tai signal
 // debug_mode: 0 normal 1 pause match 2 continue match 3 continue only 1 step
 typedef struct _daotiaotai_signal{
-	uint32_t debug_signal;
-	flighter_weapon_load * reload_flighters;
-	uint32_t reload_flighters_n;
+	int32_t room_id;
+	int32_t signal;
 } daotiaotai_signal;
 
 // Function: delete a room info (including all the corresponding clients) from their cmap

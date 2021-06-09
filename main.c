@@ -13,59 +13,53 @@
 #define MOVE_AHEAD_IN_BUF(p) (strchr(p,' ')+1)
 #define S_SERVER_WORK 1
 #define TARGET_FLIGHTER_WORK 1
-// This macro is defined in 2021.4.20:
-// When two clients participate in a match togetehr the game process moves surprisingly slow
-// and I need to use a timer to find the bottleneck
+// 这个宏用来对程序执行速度进行调优
 //#define SINGLE_ROOM_DEBUG
-// This macro is used to check return value of rio_readnb and rio_readlineb
-// and when dealing with rio_readlineb n should be set to 0
+
+// 这个宏用来对rio_readnb的返回值进行处理
 #define REC_BYTES_CHECK(A,B,msg) if((A)<(B)){pthread_mutex_lock(&mut_printf);fprintf(stderr,msg);pthread_mutex_unlock(&mut_printf);pthread_exit(NULL);}
+// 一个Room_thread等待客户端达到同步的最大时间
 #define ROOM_MAX_WAITING_MSEC (60*1000)
+// 两个结构体的size
 #define N_M_SIZE (sizeof(net_match_status))
 #define N_F_SIZE (sizeof(net_flighter_status))
+
 #define PI 3.1415926
 #define RAND_ANGLE() ((((double)(rand()%60))/60.0)*2*PI)
 // 4MB
 #define MATCH_RECORD_MAX_SIZE (1<<22)
 
+// 接待服务器的ip、端口
 #define GAME_END_HOST "localhost"
 #define GAME_END_PORT "30609"
+// 战斗结束后发送给接待服务器的数据格式，用sprintf处理
 #define GAME_END_STRING_PATTERN "POST /room/endGame HTTP/1.1\r\nContent-Type: application/json\r\nHost: 202.120.40.8:30609\r\nContent-Length:%d\r\n\r\n%s"
 
-
+// 本服务器最大支持连接的靶机、动力学模型服务器数量
 #define MAX_DRONE_N 10
 #define MAX_KINE_N 10
-// drone tag must be positive and less or equal to MAX_DRONE_TAG 
+// 最大的tag数：和具体靶机的种类相关
 #define MAX_DRONE_TAG 2
-// pool index
+// 将靶机的tag映射到靶机资源池的下标
 #define TAG_2_POOL_INDEX(tag) ((tag)-1)
+// 将比赛类型映射到靶机资源池的下标
 #define MATCH_TYPE_2_POOL_INDEX(match_type) (((match_type) == 0)?(0):((match_type) == 3 ? 1: -1))
 
-
+// 在和靶机、动力学模型服务器交互过程中等待的最长时间
 #define MAX_SIMU_WAITING_MSEC (1*1000)
-
+// debug用的宏
 #define BKGGKDD printf("BKGGKDD!\n");
 
-//#define VERBOSE
-//#define DEBUG
-// A BRIEF INTRODUCTION TO THIS SERVER:
-// 1. a main thread listens for room server to send room info
-// 2. a secondary main thread listens for clients
-// 3. for every room (as long as current room number is smaller than max_rooms)
-//    a room thread is responsible for everything
-// 4. for every client (connected client) (as long as current client number is smaller than max_clients)
-// a client thread is responsible for contacting with it
+// sbuf：具体用途可以看代码，和对接待服务器、客户端的处理有关
 sbuf_t sbuf_for_room_server;
 sbuf_t sbuf_for_clients;
-// 2 maps:
-// clientid - client info
-// roomid - room info
+// 2个map：分别映射 客户端id->client_info 房间id->room_info
 ccr_rw_map cmap_cid2cinfo;
 ccr_rw_map cmap_rid2rinfo;
-// 2 maps: sock id - sock_pair
+// 2个map：分别映射 靶机和动力学模型服务器的socket id-> sock pair
 ccr_rw_map cmap_sid2sp_drone;
 ccr_rw_map cmap_sid2sp_kine;
-// 2 sbuf: save sock pair for drone or kine
+// 2 sbuf：保存靶机和动力学模型服务器的socket pair
 sbuf_t sbuf_4_drone_sp;
 sbuf_t sbuf_4_kine_sp;
 // drone_thread id
@@ -78,22 +72,17 @@ int max_rooms;
 int max_clients;
 
 int director_listenfd;
-// mutex & cond for connecting_s_server_thread
-// purpose: at one time only one client thread connects the connecting_s_server_thread
+// mutex & cond 用于保护client_thread、drone_thread、kine_thread之间的交互过程
 pthread_mutex_t mut_kine;
 pthread_cond_t cond_kine;
-// mutex & cond for controller
 pthread_mutex_t mut_con;
 pthread_cond_t cond_con;
 
-// ready_client_id is used to tell connecting_s_server_thread that one of the clients' status
-// need to be calculated by kine_server
+// 资源池：待处理的客户端id（kine_thread处理）
 uint32_t ready_client_ids[MAX_KINE_N];
 
-// ready_pack_pt is used to tell connecting_tf_thread that one of the postures need update
+// 资源池：需要更新的靶机数据
 s_server_pack * ready_pack_pts[MAX_DRONE_TAG][MAX_DRONE_N];
-// this signal tells room_thread that a new posture is calculated 
-//int tf_ready_signal;
 
 // model server
 int sserver_listenfd;
@@ -107,7 +96,7 @@ int ui_listenfd;
 pthread_mutex_t mut_drone;
 pthread_cond_t cond_drone;
 
-// mutex protect STDOUT
+// 保护printf函数的锁
 pthread_mutex_t mut_printf;
 
 char dtt_os_status[MAXLINE];
