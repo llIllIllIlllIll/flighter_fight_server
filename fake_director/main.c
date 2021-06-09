@@ -12,6 +12,7 @@ int main(int argc, char * argv []){
 	int clientid;
 	int i,j;
 	int roomid;
+	int32_t content[2];
 
 	if(argc != 3){
 		fprintf(stderr,"usage: %s <host> <port>\n",argv[0]);
@@ -27,10 +28,10 @@ int main(int argc, char * argv []){
 	}
 	rio_readinitb(&rio,clientfd);
 
-	while(fgets(buf,MAXLINE,stdin) != NULL){
-		rio_writen(clientfd,buf,strlen(buf));
+	while(1){
+		scanf("%d %d",content,content+1);
+		rio_writen(clientfd,content,sizeof(content));
 	}
-
 
 
 	return 0;
