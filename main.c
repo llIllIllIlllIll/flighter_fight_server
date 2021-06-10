@@ -108,7 +108,7 @@ void * ui_thread(void * vargp){
 	struct sockaddr_storage clientaddr;
 	socklen_t clientlen;
 	rio_t rio;
-	size_t n;
+	int n;
 	char buf[MAXLINE];
 	int flags;
 	// json obj to return
@@ -140,18 +140,19 @@ void * ui_thread(void * vargp){
 		rio_readinitb(&rio,connfd);		
 
 		n = rio_readlineb(&rio,buf,MAXLINE);
-		if(n <= 0){
-			//pthread_mutex_lock(&mut_printf);
-			//printf("[UI_THREAD] ****************** timeout in reading url from web page *****************\n");
-			//pthread_mutex_unlock(&mut_printf);
-		}
-		else{
-			//pthread_mutex_lock(&mut_printf);
-			//printf("[UI_THREAD] Request 1st line: %s",buf);
-			//pthread_mutex_unlock(&mut_printf);
+		if(n < 0){
+			printf("[UI_THREAD] *********ERROR timeout *************\n");
+			close(connfd);
+			connfd = -1;
 		}
 		// headers
-		read_requesthdrs(&rio);
+		n = read_requesthdrs(&rio);
+		if(n < 0){
+			printf("[UI_THREAD] *********ERROR timeout *************\n");
+			close(connfd);
+			connfd = -1;
+		}
+
 		//printf("[UI_THREAD]parsed all headers\n"); 
 
 

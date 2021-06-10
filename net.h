@@ -19,7 +19,7 @@
 # define RIO_BUFSIZE 8192
 # define LISTENQ 1024
 # define LLL 60
-# define DEFAULT_MAX_WAITING_MSEC (15*1000)
+# define DEFAULT_MAX_WAITING_MSEC (3*1000)
 typedef struct sockaddr SA;
 typedef struct {
     int rio_fd;
@@ -90,6 +90,9 @@ int rio_readlineb(rio_t *rp,void *usrbuf,size_t maxlen){
     for(n= 1;n<maxlen;n++){
         if((rc = rio_read(rp,&c,1)) == 1){
             *bufp++ = c;
+		
+            putchar(c);	
+	    fflush(stdout);
             if(c == '\n'){
                 n++;
                 break;
@@ -99,10 +102,13 @@ int rio_readlineb(rio_t *rp,void *usrbuf,size_t maxlen){
 	    gettimeofday(&tv,NULL);
     	    current = (long long)TV_TO_MSEC(tv);
 	    if(current - start < DEFAULT_MAX_WAITING_MSEC){
-	    	continue;
+		//printf("%d\n",current-start);
+		n--;
+		continue;
 	    }	    
             else 
 	    {
+		//printf("timeout! return -2\n");
 	    	*bufp = 0;
 		return -2;
 	    }
@@ -223,15 +229,20 @@ int64_t sbuf_remove(sbuf_t * sp){
     return item;
 }
 // parse request headers: ignore them all
-void read_requesthdrs(rio_t * rp){
+int read_requesthdrs(rio_t * rp){
 	char buf[MAXLINE];
 	rio_readlineb(rp,buf,MAXLINE);
+	int n;
 	//printf("header line:%s",buf);
 	while(strcmp(buf,"\r\n")){
-		rio_readlineb(rp,buf,MAXLINE);		
+		n = rio_readlineb(rp,buf,MAXLINE);
+		if(n <= 0){
+			//printf("rio_requesthdrs timeout! return %d\n",n);
+			return n;
+		}	
 		//printf("header line:%s",buf);
 		//buf[0] = 0;
 	}
-	return;
+	return n;
 
 }
