@@ -92,6 +92,7 @@ int ccr_rw_map_iterate(ccr_rw_map * cmap,uint64_t * k, uint64_t * v){
 		cmap->cur_slot_pt = cmap->cur_slot_pt->next;
 		if(cmap->cur_slot_pt == NULL){
 			cmap->cur_slot_n ++;
+			cmap->cur_slot_pt = cmap->slots[cmap->cur_slot_n];
 		}
 		if(cmap->cur_slot_n == SLOTS){
 			cmap->cur_slot_n = 0;
